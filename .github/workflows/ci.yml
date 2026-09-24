@@ -41,6 +41,7 @@ jobs:
           yarn install --immutable
           yarn format:check
           yarn check
+          yarn test
           yarn build
           if node -e "process.exit(require('./package.json').scripts?.['test:e2e'] ? 0 : 1)"; then
             yarn playwright install chromium --with-deps
