@@ -1,0 +1,98 @@
+name: Check and deploy start page
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: start-page-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '24.x'
+
+jobs:
+  quality:
+    name: Check and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Validate the repository seed
+        run: test -s README.md
+
+      - name: Install dependencies and run application checks
+        if: ${{ hashFiles('package.json') != '' }}
+        run: |
+          corepack enable
+          test -f yarn.lock
+          yarn install --immutable
+          yarn format:check
+          yarn check
+          yarn build
+          if node -e "process.exit(require('./package.json').scripts?.['test:e2e'] ? 0 : 1)"; then
+            yarn playwright install chromium --with-deps
+            yarn test:e2e
+          fi
+
+      - name: Note that application checks await the scaffold
+        if: ${{ hashFiles('package.json') == '' }}
+        run: echo 'No package.json yet; application checks activate when the Astro scaffold is added.'
+
+  deploy:
+    name: Deploy production
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: quality
+    runs-on: ubuntu-latest
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Check deployment prerequisites
+        id: netlify_credentials
+        shell: bash
+        run: |
+          if [[ ! -f package.json ]]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Production deployment is skipped until the application scaffold is added."
+          elif [[ -n "$NETLIFY_AUTH_TOKEN" && -n "$NETLIFY_SITE_ID" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Production deployment is skipped until NETLIFY_AUTH_TOKEN and NETLIFY_SITE_ID are configured."
+          fi
+
+      - name: Set up Node.js
+        if: steps.netlify_credentials.outputs.configured == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack and install dependencies
+        if: steps.netlify_credentials.outputs.configured == 'true'
+        run: |
+          corepack enable
+          yarn install --immutable
+
+      - name: Build
+        if: steps.netlify_credentials.outputs.configured == 'true'
+        run: yarn build
+
+      - name: Deploy dist with the official Netlify CLI
+        if: steps.netlify_credentials.outputs.configured == 'true'
+        run: yarn dlx netlify-cli@27.8.0 deploy --prod --dir=dist --site="$NETLIFY_SITE_ID"
