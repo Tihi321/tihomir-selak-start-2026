@@ -12,10 +12,16 @@
 
 ## CI prepared
 
-`.github/workflows/ci.yml` follows the quality/deploy separation used by the other 2026 personal sites. On this README-only seed it checks that the README exists and is non-empty. Once `package.json` is added, it requires an immutable Yarn install and runs `format:check`, `check`, and `build`; it also runs Playwright browser checks when the `test:e2e` script exists. Production deployment targets only `master`, only after a package scaffold exists, and skips unless both `NETLIFY_AUTH_TOKEN` and `NETLIFY_SITE_ID` are configured.
+`.github/workflows/ci.yml` follows the quality/deploy separation used by the other 2026 personal sites. The Astro scaffold is now present: the workflow requires an immutable Yarn install and runs `format:check`, `check`, unit tests, a build, and Playwright browser checks. Production deployment targets only `master` and skips unless both `NETLIFY_AUTH_TOKEN` and `NETLIFY_SITE_ID` are configured. These checks passed locally; this unpushed feature branch has not triggered a GitHub Actions run.
 
 No credentials were added and no deployment was run.
 
-## Scope and remaining Phase 0 work
+## Implementation status and handoff
 
-This handoff covers repository setup and CI only. No application scaffold was added. The legacy site and CDN repositories were inspected as read-only references and were not changed. The remaining plan Phase 0 items—legacy page captures/audit, seed install/build verification, and opening the repository as the active Codex workspace—were not performed in this setup task. Shell environments reported different tool availability: the setup shell reported Node 24.14.0, Corepack 0.34.6, and Yarn 4.13.0; the coordinator's non-escalated shell reported Node 24.19.0 and no Corepack or Yarn on `PATH`. The seed has no manifest or lockfile to install yet.
+Implementation was performed in the requested clone at `C:\projects\Personal\tihomir-selak-start-2026`, branch `feat/start-page-foundation`. The Codex task itself remained bound to the Job coordination directory, so the implementer used an explicit working directory for every repository action; no app files were written in the coordination directory. The legacy site and CDN remained read-only, and no production, deploy, push, or domain action was performed.
+
+Completed locally: Astro/Solid static scaffold and CI quality checks; typed versioned configuration with validated local persistence, backup/import/export, migration and newer-version protection; search provider families and shortcuts with keyboard focus, editing, grouping, favorites, ordering, and recovery; Open-Meteo multi-place weather with city search, units, saved-place management, arrows, timeout, local cache/stale/offline handling; and five original, offline reflections. The visual system uses CSS-only night sky/moon/ridge shapes; no image or audio assets were copied. The weather adapter and unit tests were added by the coordinating agent in the same clone and were integrated without editing their source files. `.github/workflows/ci.yml` was updated to run unit tests as well as format, check, build, and browser checks.
+
+Latest verified results after the final visual/storage polish: `format:check`, `test` (19 unit tests), `check` (0 errors/warnings/hints), `build`, and `test:e2e` (7 browser tests) pass. E2E includes axe serious/critical scanning and overflow checks at 320, 390, 768, 1024, and 1440 px. Desktop/mobile screenshots are in `screenshots/desktop.png` and `screenshots/mobile.png`.
+
+Still staged for later plan phases: normalized CDN news integration; optional focus audio pending user confirmation and asset provenance; 200% zoom, forced-colors, reduced-motion and signed-out destination manual reviews; Netlify preview/production cutover; production-domain/legacy retirement. README records current privacy and local setup behavior. No credentials were added.

@@ -1,0 +1,39 @@
+{
+  "name": "tihomir-selak-start-2026",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "yarn@4.9.2",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "check": "astro check",
+    "build": "astro build",
+    "preview": "astro preview",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@astrojs/solid-js": "7.0.2",
+    "astro": "7.3.5",
+    "solid-js": "1.9.15",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "@axe-core/playwright": "4.13.0",
+    "@emnapi/runtime": "1.11.3",
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.13.6",
+    "playwright-core": "1.63.0",
+    "prettier": "3.9.9",
+    "prettier-plugin-astro": "0.14.1",
+    "typescript": "6.0.3",
+    "vite": "8.3.0",
+    "vitest": "5.0.1"
+  }
+}

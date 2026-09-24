@@ -1,6 +1,6 @@
 # Start page 2026 — research and implementation plan
 
-- Status: research and GitHub repository setup complete; implementation not started
+- Status: core dashboard and weather/quote foundation implemented locally; news, audio, preview, and production cutover remain
 - Prepared: 24 September 2026
 - Target: `https://start.tihomir-selak.from.hr/`
 - New repository: `https://github.com/Tihi321/tihomir-selak-start-2026`
