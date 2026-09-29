@@ -97,4 +97,4 @@ jobs:
 
       - name: Deploy dist with the official Netlify CLI
         if: steps.netlify_credentials.outputs.configured == 'true'
-        run: yarn dlx netlify-cli@27.10.2 deploy --prod --dir=dist --site="$NETLIFY_SITE_ID" --message "$DEPLOY_MESSAGE"
+        run: yarn dlx -p netlify-cli@27.10.2 netlify deploy --prod --dir=dist --site="$NETLIFY_SITE_ID" --message "$DEPLOY_MESSAGE"
