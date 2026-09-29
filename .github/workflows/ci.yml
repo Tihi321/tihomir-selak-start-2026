@@ -20,7 +20,7 @@ env:
 jobs:
   quality:
     name: Check and build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -56,10 +56,11 @@ jobs:
     name: Deploy production
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs: quality
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
       NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      DEPLOY_MESSAGE: ${{ github.event.head_commit.message }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -96,4 +97,4 @@ jobs:
 
       - name: Deploy dist with the official Netlify CLI
         if: steps.netlify_credentials.outputs.configured == 'true'
-        run: yarn dlx netlify-cli@27.8.0 deploy --prod --dir=dist --site="$NETLIFY_SITE_ID"
+        run: yarn dlx netlify-cli@27.10.2 deploy --prod --dir=dist --site="$NETLIFY_SITE_ID" --message "$DEPLOY_MESSAGE"
