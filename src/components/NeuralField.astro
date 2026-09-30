@@ -1,0 +1,60 @@
+<!-- Mirrors tihomir-selak-2026/src/components/system/NeuralField.astro, keep in sync. -->
+<canvas class="neural-field" aria-hidden="true"></canvas>
+<!-- Probes exist only so the script can read resolved light-dark() colors. -->
+<span class="neural-field__probe" aria-hidden="true">
+  <i class="neural-field__swatch neural-field__swatch--synapse"></i>
+  <i class="neural-field__swatch neural-field__swatch--phosphor"></i>
+  <i class="neural-field__swatch neural-field__swatch--carbon"></i>
+</span>
+
+<style>
+  .neural-field {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+    display: block;
+  }
+
+  .neural-field__probe {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .neural-field__swatch--synapse {
+    color: var(--c-synapse);
+  }
+
+  .neural-field__swatch--phosphor {
+    color: var(--c-phosphor);
+  }
+
+  .neural-field__swatch--carbon {
+    color: var(--c-carbon);
+  }
+</style>
+
+<script>
+  import { startNeuralField } from '../scripts/neural-field';
+
+  const canvas = document.querySelector<HTMLCanvasElement>('.neural-field');
+  const synapse = document.querySelector<HTMLElement>(
+    '.neural-field__swatch--synapse',
+  );
+  const phosphor = document.querySelector<HTMLElement>(
+    '.neural-field__swatch--phosphor',
+  );
+  const carbon = document.querySelector<HTMLElement>(
+    '.neural-field__swatch--carbon',
+  );
+
+  if (canvas && synapse && phosphor && carbon) {
+    startNeuralField(canvas, { synapse, phosphor, carbon });
+  }
+</script>

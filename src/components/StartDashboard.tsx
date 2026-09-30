@@ -1,11 +1,26 @@
 import {
   For,
   Show,
+  createEffect,
   createMemo,
   createSignal,
   onCleanup,
   onMount,
 } from 'solid-js';
+import Background from '@/components/Background';
+import BackgroundControls from '@/components/BackgroundControls';
+import SynapseMark from '@/components/SynapseMark';
+import ThemeToggle, {
+  currentThemeChoice,
+  setTheme,
+  type ThemeChoice,
+} from '@/components/ThemeToggle';
+import { REFLECTION_AUTHOR } from '@/data/reflections';
+import {
+  getDailyQuote,
+  getRandomQuote,
+  type Quote,
+} from '@/lib/quotes/cdnQuotes';
 import { createDefaultConfig } from '@/data/defaults';
 import {
   searchFamilies,
@@ -22,6 +37,7 @@ import {
 } from '@/lib/config/storage';
 import {
   normalizeShortcutUrl,
+  type Background as BackgroundConfig,
   type WeatherLocation,
   type Shortcut,
   type StartPageConfig,
@@ -33,14 +49,6 @@ import {
   type CityResult,
   type WeatherResult,
 } from '@/lib/weather/openMeteo';
-
-const reflections = [
-  'Start with the next clear step.',
-  'A little progress still changes the map.',
-  'Leave room for a better question.',
-  'Notice what is already working.',
-  'Begin where your feet are.',
-];
 
 function weatherSymbol(code: number) {
   if (code === 0) return '☼';
@@ -86,7 +94,13 @@ export default function StartDashboard() {
   const [cityResults, setCityResults] = createSignal<CityResult[]>([]);
   const [cityError, setCityError] = createSignal('');
   const [findingCities, setFindingCities] = createSignal(false);
-  const [quoteOffset, setQuoteOffset] = createSignal(0);
+  const [quote, setQuote] = createSignal<Quote | null>(null);
+  const [quoteBusy, setQuoteBusy] = createSignal(false);
+  const [themeChoice, setThemeChoice] = createSignal<ThemeChoice>('system');
+  const [bgOpen, setBgOpen] = createSignal(false);
+  let quoteToken = 0;
+  let bgMenu: HTMLDivElement | undefined;
+  let bgButton: HTMLButtonElement | undefined;
   const [family, setFamily] = createSignal('web');
   const [query, setQuery] = createSignal('');
   const [showAll, setShowAll] = createSignal(false);
@@ -122,17 +136,6 @@ export default function StartDashboard() {
         ({ id }) => id === config().weather.activeLocationId,
       ) ?? config().weather.locations[0]!,
   );
-  const dailyQuote = createMemo(() => {
-    const date = now();
-    const localDay = Math.floor(
-      new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime() /
-        86_400_000,
-    );
-    return reflections[
-      (((localDay + quoteOffset()) % reflections.length) + reflections.length) %
-        reflections.length
-    ]!;
-  });
   const familyProviders = createMemo(() =>
     searchProviders.filter((item) => item.family === family()),
   );
@@ -201,7 +204,73 @@ export default function StartDashboard() {
     }
   }
 
+  function setBackground(next: BackgroundConfig): boolean {
+    return persist({
+      ...config(),
+      appearance: { ...config().appearance, background: next },
+    });
+  }
+
+  function customImageFailed() {
+    const current = config().appearance.background;
+    if (current.kind !== 'custom') return;
+    persist(
+      {
+        ...config(),
+        appearance: { background: { ...current, kind: 'field' } },
+      },
+      'Your image could not be loaded, so the neural field is back.',
+    );
+  }
+
+  function chooseTheme(choice: ThemeChoice) {
+    setTheme(choice);
+    setThemeChoice(choice);
+  }
+
+  async function loadDailyQuote() {
+    const token = ++quoteToken;
+    setQuoteBusy(true);
+    const result = await getDailyQuote({ storage: browserStorage() });
+    if (token !== quoteToken) return;
+    setQuote(result);
+    setQuoteBusy(false);
+  }
+
+  async function nextQuote() {
+    const token = ++quoteToken;
+    setQuoteBusy(true);
+    const result = await getRandomQuote({
+      storage: browserStorage(),
+      exclude: quote()?.text,
+    });
+    if (token !== quoteToken) return;
+    setQuote(result);
+    setQuoteBusy(false);
+  }
+
+  // Mirrors the chosen background on <html>, where theme-init.js also reads
+  // it before first paint, so the field never flashes for photo users.
+  createEffect(() => {
+    const kind = config().appearance.background.kind;
+    const root = document.documentElement;
+    root.dataset.background = kind;
+    root.dataset.field = kind === 'field' ? 'on' : 'off';
+    try {
+      localStorage.setItem('start-page:background-kind', kind);
+    } catch {
+      // Storage can be blocked. The choice then lasts for this tab only.
+    }
+  });
+
+  createEffect(() => {
+    if (config().quote.enabled && !quote() && !quoteBusy())
+      void loadDailyQuote();
+  });
+
   function openSettings() {
+    setBgOpen(false);
+    setThemeChoice(currentThemeChoice());
     settingsDialog?.showModal();
   }
   function openShortcut(item?: Shortcut) {
@@ -675,9 +744,15 @@ export default function StartDashboard() {
         ),
       );
     setNow(new Date());
+    setThemeChoice(currentThemeChoice());
     const clockTimer = window.setInterval(() => setNow(new Date()), 30_000);
     const handler = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
+      if (event.key === 'Escape' && bgOpen()) {
+        setBgOpen(false);
+        bgButton?.focus();
+        return;
+      }
       if (
         event.key === '/' &&
         !target?.matches('input, textarea, select, [contenteditable="true"]') &&
@@ -694,9 +769,20 @@ export default function StartDashboard() {
         searchNode()?.focus();
       }
     };
+    const outside = (event: PointerEvent) => {
+      if (
+        bgOpen() &&
+        event.target instanceof Node &&
+        !bgMenu?.contains(event.target)
+      )
+        setBgOpen(false);
+    };
     window.addEventListener('keydown', handler);
+    document.addEventListener('pointerdown', outside);
     onCleanup(() => {
       window.removeEventListener('keydown', handler);
+      document.removeEventListener('pointerdown', outside);
+      quoteToken++;
       window.clearInterval(clockTimer);
       weatherAbort?.abort();
       cityAbort?.abort();
@@ -704,317 +790,465 @@ export default function StartDashboard() {
   });
 
   return (
-    <main class="page-shell">
-      <div class="night-sky" aria-hidden="true">
-        <span class="moon" />
-        <span class="ridge ridge-back" />
-        <span class="ridge ridge-front" />
-      </div>
-      <div class="content-frame">
-        <header class="topline">
-          <div class="clock-block">
-            <time class="clock" dateTime={now().toISOString()}>
-              {new Intl.DateTimeFormat('en-GB', {
-                hour: '2-digit',
-                minute: '2-digit',
-              }).format(now())}
-            </time>
-            <span class="date-label">
-              {new Intl.DateTimeFormat('en-GB', {
-                weekday: 'short',
-                day: 'numeric',
-                month: 'short',
-              }).format(now())}
-            </span>
+    <>
+      <Background
+        background={config().appearance.background}
+        onCustomError={customImageFailed}
+      />
+      <main class="page-shell">
+        <header class="site-header wrap">
+          <div class="site-header__brand">
+            <SynapseMark />
+            <span class="wordmark">Start</span>
           </div>
-          <div class="weather-widget" aria-label="Weather">
-            <Show when={config().weather.locations.length > 1}>
-              <button
-                type="button"
-                class="weather-arrow"
-                aria-label="Previous weather location"
-                onClick={() => moveWeatherLocation(-1)}
-              >
-                ‹
-              </button>
-            </Show>
-            <span class="weather-mark" aria-hidden="true">
-              {weather().snapshot
-                ? weatherSymbol(weather().snapshot!.weatherCode)
-                : '◌'}
-            </span>
-            <div class="weather-summary" aria-live="polite">
-              <strong>{activeLocation().label}</strong>
-              <Show
-                when={weather().snapshot}
-                fallback={
-                  <span>
-                    {weather().error
-                      ? 'Weather unavailable'
-                      : 'Checking weather'}
-                  </span>
-                }
-              >
-                <span>
-                  {Math.round(weather().snapshot!.temperature)}°
-                  {config().weather.units === 'metric' ? 'C' : 'F'} ·{' '}
-                  {weatherDescription(weather().snapshot!.weatherCode)}
-                </span>
-                <small>
-                  {weather().stale
-                    ? 'Saved forecast · connection unavailable'
-                    : `High ${Math.round(weather().snapshot!.high)}° · Low ${Math.round(weather().snapshot!.low)}°`}
-                </small>
+          <div class="site-header__meta">
+            <div class="clock-block">
+              <time class="clock" dateTime={now().toISOString()}>
+                {new Intl.DateTimeFormat('en-GB', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }).format(now())}
+              </time>
+              <span class="date-label">
+                {new Intl.DateTimeFormat('en-GB', {
+                  weekday: 'short',
+                  day: 'numeric',
+                  month: 'short',
+                }).format(now())}
+              </span>
+            </div>
+            <div class="weather-widget" aria-label="Weather">
+              <Show when={config().weather.locations.length > 1}>
+                <button
+                  type="button"
+                  class="weather-arrow"
+                  aria-label="Previous weather location"
+                  onClick={() => moveWeatherLocation(-1)}
+                >
+                  ‹
+                </button>
               </Show>
-            </div>
-            <Show when={config().weather.locations.length > 1}>
-              <button
-                type="button"
-                class="weather-arrow"
-                aria-label="Next weather location"
-                onClick={() => moveWeatherLocation(1)}
-              >
-                ›
-              </button>
-            </Show>
-            <button
-              type="button"
-              class="weather-refresh"
-              aria-label="Refresh weather"
-              onClick={() => void refreshWeather(true)}
-            >
-              ↻
-            </button>
-          </div>
-          <button class="settings-trigger" type="button" onClick={openSettings}>
-            <span aria-hidden="true">⚙</span>
-            <span>Settings</span>
-          </button>
-        </header>
-
-        <section class="search-stage" aria-labelledby="welcome-heading">
-          <p class="welcome-line" id="welcome-heading">
-            Good to see you.
-          </p>
-          <form class="search-rail" onSubmit={search} role="search">
-            <label class="sr-only" for="start-search">
-              Search the web or open a destination
-            </label>
-            <select
-              class="provider-select"
-              aria-label="Search provider"
-              value={provider().id}
-              onChange={(event) => setProvider(event.currentTarget.value)}
-            >
-              <For each={familyProviders()}>
-                {(item) => <option value={item.id}>{item.label}</option>}
-              </For>
-            </select>
-            <input
-              ref={setSearchNode}
-              id="start-search"
-              type="search"
-              value={query()}
-              onInput={(event) => setQuery(event.currentTarget.value)}
-              placeholder={`Search with ${provider().label}…`}
-              autocomplete="off"
-            />
-            <button
-              class="submit-search"
-              type="submit"
-              aria-label={`Search with ${provider().label}`}
-            >
-              <span aria-hidden="true">↵</span>
-            </button>
-          </form>
-          <div class="search-meta">
-            <div
-              class="family-switcher"
-              role="group"
-              aria-label="Search category"
-            >
-              <For each={searchFamilies}>
-                {(item) => (
-                  <button
-                    type="button"
-                    classList={{ selected: family() === item.id }}
-                    onClick={() =>
-                      setProvider(
-                        searchProviders.find(
-                          (candidate) => candidate.family === item.id,
-                        )!.id,
-                      )
-                    }
-                  >
-                    {item.label}
-                  </button>
-                )}
-              </For>
-            </div>
-            <span class="shortcut-hint">
-              <kbd>/</kbd> to focus
-            </span>
-          </div>
-          <p class="privacy-note">
-            {provider().queryTemplate
-              ? provider().privacyNote
-              : `${provider().label} opens its homepage. Text stays in this field; enter your prompt on that site.`}
-          </p>
-        </section>
-
-        <section class="favorites-section" aria-labelledby="favorites-heading">
-          <div class="section-heading">
-            <div>
-              <h1 id="favorites-heading">Your shortcuts</h1>
-              <p>A small shelf for the places you visit most.</p>
-            </div>
-            <div class="section-actions">
-              <button
-                class="quiet-button"
-                type="button"
-                onClick={() => setShowAll(!showAll())}
-              >
-                {showAll() ? 'Show favorites' : 'All shortcuts'}
-              </button>
-              <button
-                class="add-button"
-                type="button"
-                onClick={() => openShortcut()}
-              >
-                <span aria-hidden="true">＋</span> Add
-              </button>
-            </div>
-          </div>
-          <Show
-            when={!showAll()}
-            fallback={
-              <div class="catalogue">
-                <div class="catalogue-tools">
-                  <label class="sr-only" for="shortcut-filter">
-                    Filter shortcuts
-                  </label>
-                  <input
-                    id="shortcut-filter"
-                    class="filter-input"
-                    type="search"
-                    placeholder="Find a shortcut"
-                    value={filter()}
-                    onInput={(event) => setFilter(event.currentTarget.value)}
-                  />
-                  <button
-                    class="quiet-button"
-                    type="button"
-                    onClick={openSettings}
-                  >
-                    Settings & backup
-                  </button>
-                </div>
-                <For each={groups()}>
-                  {(group) => (
-                    <section
-                      class="shortcut-group"
-                      aria-labelledby={`group-${group.id}`}
-                    >
-                      <h2 id={`group-${group.id}`}>
-                        {group.label}
-                        <span>{group.shortcuts.length}</span>
-                      </h2>
-                      <div class="shortcut-list">
-                        <For each={group.shortcuts}>
-                          {(item) => (
-                            <ShortcutRow
-                              shortcut={item}
-                              onEdit={openShortcut}
-                              onHide={hide}
-                              onFavorite={toggleFavorite}
-                              onRemove={remove}
-                              onDuplicate={duplicate}
-                              onMove={move}
-                            />
-                          )}
-                        </For>
-                      </div>
-                    </section>
-                  )}
-                </For>
-                <Show when={!groups().length}>
-                  <p class="empty-state">
-                    No shortcuts match that search. Try another name or add one.
-                  </p>
-                </Show>
-                <Show when={config().shortcuts.some((item) => item.hidden)}>
-                  <section class="shortcut-group hidden-group">
-                    <h2>
-                      Hidden{' '}
-                      <span>
-                        {
-                          config().shortcuts.filter((item) => item.hidden)
-                            .length
-                        }
-                      </span>
-                    </h2>
-                    <For
-                      each={config().shortcuts.filter((item) => item.hidden)}
-                    >
-                      {(item) => (
-                        <div class="hidden-shortcut">
-                          <span>{item.label}</span>
-                          <button
-                            class="quiet-button"
-                            type="button"
-                            onClick={() => hide(item)}
-                          >
-                            Restore
-                          </button>
-                        </div>
-                      )}
-                    </For>
-                  </section>
+              <span class="weather-mark" aria-hidden="true">
+                {weather().snapshot
+                  ? weatherSymbol(weather().snapshot!.weatherCode)
+                  : '◌'}
+              </span>
+              <div class="weather-summary" aria-live="polite">
+                <strong>{activeLocation().label}</strong>
+                <Show
+                  when={weather().snapshot}
+                  fallback={
+                    <span>
+                      {weather().error
+                        ? 'Weather unavailable'
+                        : 'Checking weather'}
+                    </span>
+                  }
+                >
+                  <span>
+                    {Math.round(weather().snapshot!.temperature)}°
+                    {config().weather.units === 'metric' ? 'C' : 'F'},{' '}
+                    {weatherDescription(weather().snapshot!.weatherCode)}
+                  </span>
+                  <small>
+                    {weather().stale
+                      ? 'Saved forecast, connection unavailable'
+                      : `High ${Math.round(weather().snapshot!.high)}°, low ${Math.round(weather().snapshot!.low)}°`}
+                  </small>
                 </Show>
               </div>
-            }
-          >
-            <nav class="favorite-shelf" aria-label="Favorite shortcuts">
-              <For each={favorites().slice(0, 16)}>
-                {(item) => (
-                  <a
-                    class="favorite-link"
-                    href={item.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={item.label}
-                  >
-                    <span class="favorite-glyph" aria-hidden="true">
-                      {item.icon || item.label.slice(0, 1).toUpperCase()}
-                    </span>
-                    <span>{item.label}</span>
-                  </a>
-                )}
-              </For>
-              <Show when={!favorites().length}>
-                <p class="empty-state">
-                  Your shelf is clear. Add a shortcut to put a place here.
-                </p>
+              <Show when={config().weather.locations.length > 1}>
+                <button
+                  type="button"
+                  class="weather-arrow"
+                  aria-label="Next weather location"
+                  onClick={() => moveWeatherLocation(1)}
+                >
+                  ›
+                </button>
               </Show>
-            </nav>
-          </Show>
-        </section>
-        <section class="quote-strip" aria-label="An original site reflection">
-          <span class="quote-mark" aria-hidden="true">
-            “
-          </span>
-          <blockquote>{dailyQuote()}</blockquote>
-          <span class="quote-source">An original reflection</span>
-          <button
-            type="button"
-            class="quote-next"
-            onClick={() => setQuoteOffset((value) => value + 1)}
+              <button
+                type="button"
+                class="weather-refresh"
+                aria-label="Refresh weather"
+                onClick={() => void refreshWeather(true)}
+              >
+                ↻
+              </button>
+            </div>
+          </div>
+          <div class="site-controls">
+            <ThemeToggle />
+            <div class="bg-menu" ref={bgMenu}>
+              <button
+                ref={bgButton}
+                class="icon-btn"
+                type="button"
+                aria-label="Background"
+                aria-haspopup="true"
+                aria-expanded={bgOpen()}
+                aria-controls="background-popover"
+                onClick={() => setBgOpen(!bgOpen())}
+              >
+                <svg
+                  viewBox="0 0 20 20"
+                  width="16"
+                  height="16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.25"
+                  stroke-linecap="round"
+                  aria-hidden="true"
+                >
+                  <path d="M4.5 14.5 8 6.5l6 2.5 1.5 6M8 6.5l-3.5 8M8 6.5 14 9" />
+                  <circle
+                    cx="4.5"
+                    cy="14.5"
+                    r="1.6"
+                    fill="currentColor"
+                    stroke="none"
+                  />
+                  <circle
+                    cx="8"
+                    cy="6.5"
+                    r="1.6"
+                    fill="currentColor"
+                    stroke="none"
+                  />
+                  <circle
+                    cx="14"
+                    cy="9"
+                    r="1.6"
+                    fill="currentColor"
+                    stroke="none"
+                  />
+                  <circle
+                    cx="15.5"
+                    cy="14.5"
+                    r="1.6"
+                    fill="currentColor"
+                    stroke="none"
+                  />
+                </svg>
+              </button>
+              <Show when={bgOpen()}>
+                <div
+                  id="background-popover"
+                  class="bg-popover"
+                  role="group"
+                  aria-label="Background options"
+                >
+                  <BackgroundControls
+                    idPrefix="pop"
+                    variant="radio"
+                    background={config().appearance.background}
+                    onChange={setBackground}
+                    onPicked={() => setBgOpen(false)}
+                  />
+                </div>
+              </Show>
+            </div>
+            <button
+              class="icon-btn settings-trigger"
+              type="button"
+              aria-label="Settings"
+              onClick={openSettings}
+            >
+              <svg
+                viewBox="0 0 20 20"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.25"
+                aria-hidden="true"
+              >
+                <circle
+                  cx="10"
+                  cy="10"
+                  r="6.4"
+                  stroke-width="2.6"
+                  stroke-dasharray="2.1 2.05"
+                />
+                <circle cx="10" cy="10" r="4.6" />
+                <circle cx="10" cy="10" r="1.7" />
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="wrap page-body">
+          <section class="search-stage" aria-labelledby="welcome-heading">
+            <h1 class="sr-only" id="welcome-heading">
+              Start page
+            </h1>
+            <Show when={config().quote.enabled}>
+              <figure
+                class="hero-quote"
+                classList={{ 'is-loading': !quote() }}
+                aria-busy={!quote()}
+              >
+                <blockquote>{quote()?.text ?? ''}</blockquote>
+                <figcaption class="mono">
+                  <span>
+                    {quote()
+                      ? quote()!.source === 'local'
+                        ? REFLECTION_AUTHOR
+                        : quote()!.author
+                      : ''}
+                  </span>
+                  <button
+                    type="button"
+                    class="link-button"
+                    disabled={quoteBusy()}
+                    onClick={() => void nextQuote()}
+                  >
+                    Next quote
+                  </button>
+                </figcaption>
+              </figure>
+            </Show>
+            <form class="search-rail" onSubmit={search} role="search">
+              <label class="sr-only" for="start-search">
+                Search the web or open a destination
+              </label>
+              <select
+                class="provider-select"
+                aria-label="Search provider"
+                value={provider().id}
+                onChange={(event) => setProvider(event.currentTarget.value)}
+              >
+                <For each={familyProviders()}>
+                  {(item) => <option value={item.id}>{item.label}</option>}
+                </For>
+              </select>
+              <input
+                ref={setSearchNode}
+                id="start-search"
+                type="search"
+                value={query()}
+                onInput={(event) => setQuery(event.currentTarget.value)}
+                placeholder={`Search with ${provider().label}…`}
+                autocomplete="off"
+              />
+              <button
+                class="submit-search"
+                type="submit"
+                aria-label={`Search with ${provider().label}`}
+              >
+                <span aria-hidden="true">↵</span>
+              </button>
+            </form>
+            <div class="search-meta">
+              <div
+                class="family-switcher"
+                role="group"
+                aria-label="Search category"
+              >
+                <For each={searchFamilies}>
+                  {(item) => (
+                    <button
+                      type="button"
+                      classList={{ selected: family() === item.id }}
+                      aria-pressed={family() === item.id}
+                      onClick={() =>
+                        setProvider(
+                          searchProviders.find(
+                            (candidate) => candidate.family === item.id,
+                          )!.id,
+                        )
+                      }
+                    >
+                      {item.label}
+                    </button>
+                  )}
+                </For>
+              </div>
+              <span class="shortcut-hint mono">
+                <kbd>/</kbd> to focus
+              </span>
+            </div>
+            <p class="privacy-note mono">
+              {provider().queryTemplate
+                ? provider().privacyNote
+                : `${provider().label} opens its homepage. Text stays in this field; enter your prompt on that site.`}
+            </p>
+          </section>
+
+          <section
+            class="tile-section grid-12"
+            aria-labelledby="favorites-heading"
           >
-            Next thought
-          </button>
-        </section>
-        <footer class="page-footer">
-          <span>Made for the next place you’re headed.</span>
+            <h2 class="tile-section__label" id="favorites-heading">
+              <svg
+                class="tile-section__glyph"
+                viewBox="0 0 16 16"
+                width="14"
+                height="14"
+                aria-hidden="true"
+              >
+                <path
+                  d="M7 9 4.2 6.4 1.8 6.6M4.2 6.4 3.6 3.2M7 9 8 4.6 10.4 3M8 4.6 7 1.6M7 9 3.8 11.4 2 14.2M3.8 11.4 1.4 11M7 9 8.6 13.2 7.6 15.2M9 9.2 15 8.2"
+                  fill="none"
+                />
+                <circle cx="7" cy="9" r="2.1" />
+              </svg>
+              Shortcuts
+            </h2>
+            <div class="tile-section__body">
+              <div class="section-actions">
+                <button
+                  class="quiet-button"
+                  type="button"
+                  onClick={() => setShowAll(!showAll())}
+                >
+                  {showAll() ? 'Show favorites' : 'All shortcuts'}
+                </button>
+                <button
+                  class="quiet-button add-button"
+                  type="button"
+                  onClick={() => openShortcut()}
+                >
+                  Add
+                </button>
+              </div>
+              <Show
+                when={!showAll()}
+                fallback={
+                  <div class="catalogue">
+                    <div class="catalogue-tools">
+                      <label class="sr-only" for="shortcut-filter">
+                        Filter shortcuts
+                      </label>
+                      <input
+                        id="shortcut-filter"
+                        class="filter-input"
+                        type="search"
+                        placeholder="Find a shortcut"
+                        value={filter()}
+                        onInput={(event) =>
+                          setFilter(event.currentTarget.value)
+                        }
+                      />
+                      <button
+                        class="quiet-button"
+                        type="button"
+                        onClick={openSettings}
+                      >
+                        Settings & backup
+                      </button>
+                    </div>
+                    <For each={groups()}>
+                      {(group) => (
+                        <section
+                          class="shortcut-group"
+                          aria-labelledby={`group-${group.id}`}
+                        >
+                          <h3 id={`group-${group.id}`}>
+                            {group.label}
+                            <span>{group.shortcuts.length}</span>
+                          </h3>
+                          <div class="shortcut-list">
+                            <For each={group.shortcuts}>
+                              {(item) => (
+                                <ShortcutRow
+                                  shortcut={item}
+                                  onEdit={openShortcut}
+                                  onHide={hide}
+                                  onFavorite={toggleFavorite}
+                                  onRemove={remove}
+                                  onDuplicate={duplicate}
+                                  onMove={move}
+                                />
+                              )}
+                            </For>
+                          </div>
+                        </section>
+                      )}
+                    </For>
+                    <Show when={!groups().length}>
+                      <p class="empty-state">
+                        No shortcuts match that search. Try another name or add
+                        one.
+                      </p>
+                    </Show>
+                    <Show when={config().shortcuts.some((item) => item.hidden)}>
+                      <section class="shortcut-group hidden-group">
+                        <h3>
+                          Hidden{' '}
+                          <span>
+                            {
+                              config().shortcuts.filter((item) => item.hidden)
+                                .length
+                            }
+                          </span>
+                        </h3>
+                        <For
+                          each={config().shortcuts.filter(
+                            (item) => item.hidden,
+                          )}
+                        >
+                          {(item) => (
+                            <div class="hidden-shortcut">
+                              <span>{item.label}</span>
+                              <button
+                                class="quiet-button"
+                                type="button"
+                                onClick={() => hide(item)}
+                              >
+                                Restore
+                              </button>
+                            </div>
+                          )}
+                        </For>
+                      </section>
+                    </Show>
+                  </div>
+                }
+              >
+                <nav class="favorite-shelf" aria-label="Favorite shortcuts">
+                  <For each={favorites().slice(0, 16)}>
+                    {(item) => (
+                      <a
+                        class="favorite-link"
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={item.label}
+                      >
+                        <span class="favorite-glyph" aria-hidden="true">
+                          {item.icon || item.label.slice(0, 1).toUpperCase()}
+                        </span>
+                        <span>{item.label}</span>
+                      </a>
+                    )}
+                  </For>
+                  <Show when={!favorites().length}>
+                    <p class="empty-state">
+                      Your shelf is clear. Add a shortcut to put a place here.
+                    </p>
+                  </Show>
+                </nav>
+              </Show>
+            </div>
+          </section>
+        </div>
+
+        <footer class="page-footer wrap mono">
+          <a
+            href="https://tihomir-selak.from.hr/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            tihomir-selak.from.hr
+          </a>
+          <a
+            href="https://blog.tihomir-selak.from.hr/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Blog
+          </a>
           <a
             href="https://open-meteo.com/"
             target="_blank"
@@ -1023,386 +1257,433 @@ export default function StartDashboard() {
             Weather by Open-Meteo
           </a>
         </footer>
-      </div>
 
-      <Show when={notice()}>
-        <div class="notice" role="status">
-          {notice()}
-          <Show when={undoTarget()}>
-            <button type="button" onClick={undo}>
-              Undo
-            </button>
-          </Show>
-          <button
-            class="dismiss-notice"
-            type="button"
-            aria-label="Dismiss notice"
-            onClick={() => setNotice('')}
-          >
-            ×
-          </button>
-        </div>
-      </Show>
-
-      <dialog
-        ref={settingsDialog}
-        class="settings-dialog"
-        aria-labelledby="settings-title"
-        onClose={() => undefined}
-      >
-        <div class="dialog-heading">
-          <div>
-            <p class="dialog-kicker">Your browser</p>
-            <h2 id="settings-title">Settings & backup</h2>
-          </div>
-          <button
-            class="icon-button"
-            type="button"
-            aria-label="Close settings"
-            onClick={() => settingsDialog?.close()}
-          >
-            ×
-          </button>
-        </div>
-        <p class="dialog-copy">
-          Your setup stays on this device. Keep a JSON copy if you want to move
-          it later.
-        </p>
-        <div class="settings-summary">
-          <span>{config().shortcuts.length} shortcuts</span>
-          <span>{config().weather.locations.length} saved places</span>
-          <span>{config().weather.units} units</span>
-        </div>
-        <section class="settings-block">
-          <h3>Search</h3>
-          <label for="default-provider">Default provider</label>
-          <select
-            id="default-provider"
-            value={provider().id}
-            onChange={(event) => setProvider(event.currentTarget.value)}
-          >
-            <For each={searchProviders}>
-              {(item) => (
-                <option value={item.id}>
-                  {item.family} · {item.label}
-                </option>
-              )}
-            </For>
-          </select>
-        </section>
-        <section class="settings-block">
-          <h3>Weather locations</h3>
-          <label for="weather-units">Temperature</label>
-          <select
-            id="weather-units"
-            value={config().weather.units}
-            onChange={(event) =>
-              changeWeatherUnits(
-                event.currentTarget.value as 'metric' | 'imperial',
-              )
-            }
-          >
-            <option value="metric">Celsius</option>
-            <option value="imperial">Fahrenheit</option>
-          </select>
-          <ul class="location-list">
-            <For
-              each={[...config().weather.locations].sort(
-                (a, b) => a.order - b.order,
-              )}
-            >
-              {(item, index) => (
-                <li class="saved-place">
-                  <div class="place-description">
-                    <span>
-                      {item.label}
-                      {item.id === config().weather.activeLocationId ? (
-                        <small class="active-tag">Current</small>
-                      ) : null}
-                    </span>
-                    <small>
-                      {item.latitude.toFixed(2)}, {item.longitude.toFixed(2)} ·{' '}
-                      {item.timezone}
-                    </small>
-                  </div>
-                  <div class="place-actions">
-                    <Show when={item.id !== config().weather.activeLocationId}>
-                      <button
-                        type="button"
-                        class="place-action"
-                        onClick={() => {
-                          if (
-                            persist(
-                              {
-                                ...config(),
-                                weather: {
-                                  ...config().weather,
-                                  activeLocationId: item.id,
-                                },
-                              },
-                              `${item.label} is now active.`,
-                            )
-                          )
-                            void refreshWeather(false, item);
-                        }}
-                      >
-                        Show
-                      </button>
-                    </Show>
-                    <button
-                      type="button"
-                      class="place-action"
-                      aria-label={`Move ${item.label} up`}
-                      disabled={index() === 0}
-                      onClick={() => reorderWeatherLocation(item, -1)}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      class="place-action"
-                      aria-label={`Move ${item.label} down`}
-                      disabled={
-                        index() === config().weather.locations.length - 1
-                      }
-                      onClick={() => reorderWeatherLocation(item, 1)}
-                    >
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      class="place-action"
-                      onClick={() => renameWeatherLocation(item)}
-                    >
-                      Rename
-                    </button>
-                    <button
-                      type="button"
-                      class="place-action remove-place"
-                      onClick={() => removeWeatherLocation(item)}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </li>
-              )}
-            </For>
-          </ul>
-          <form class="city-search" onSubmit={findCities}>
-            <label for="city-search">Add a place</label>
-            <div class="city-search-row">
-              <input
-                id="city-search"
-                type="search"
-                minlength="2"
-                maxlength="80"
-                placeholder="Search city name"
-                value={cityQuery()}
-                onInput={(event) => setCityQuery(event.currentTarget.value)}
-              />
-              <button
-                class="secondary-button"
-                type="submit"
-                disabled={findingCities()}
-              >
-                {findingCities() ? 'Searching…' : 'Search places'}
+        <Show when={notice()}>
+          <div class="notice" role="status">
+            {notice()}
+            <Show when={undoTarget()}>
+              <button type="button" onClick={undo}>
+                Undo
               </button>
-            </div>
-          </form>
-          <Show when={cityError()}>
-            <p class="error-message" role="alert">
-              {cityError()}
-            </p>
-          </Show>
-          <Show when={cityResults().length > 0}>
-            <ul class="city-results" aria-label="Place search results">
-              <For each={cityResults()}>
-                {(city) => (
-                  <li>
-                    <div>
-                      <strong>{city.label}</strong>
-                      <small>
-                        {[city.region, city.country].filter(Boolean).join(', ')}
-                      </small>
-                    </div>
-                    <button
-                      class="secondary-button"
-                      type="button"
-                      onClick={() => addWeatherLocation(city)}
-                    >
-                      Add to saved places
-                    </button>
-                  </li>
-                )}
-              </For>
-            </ul>
-          </Show>
-        </section>
-        <section class="settings-block">
-          <h3>Move or restore settings</h3>
-          <div class="backup-actions">
+            </Show>
             <button
-              class="secondary-button"
+              class="dismiss-notice"
               type="button"
-              onClick={downloadBackup}
-            >
-              Export JSON
-            </button>
-            <button
-              class="secondary-button"
-              type="button"
-              onClick={() => importInput?.click()}
-            >
-              Choose JSON file
-            </button>
-            <input
-              ref={importInput}
-              class="sr-only"
-              type="file"
-              accept="application/json,.json"
-              onChange={selectBackup}
-            />
-          </div>
-          <Show when={importValue()}>
-            <div class="import-preview">
-              <p>
-                This file has {importValue()!.shortcuts.length} shortcuts and{' '}
-                {importValue()!.weather.locations.length} saved weather
-                locations:
-              </p>
-              <ul class="import-locations">
-                <For each={importValue()!.weather.locations}>
-                  {(location) => (
-                    <li>
-                      {location.label} — {location.latitude},{' '}
-                      {location.longitude} · {location.timezone}
-                    </li>
-                  )}
-                </For>
-              </ul>
-              <label for="import-mode">How should it be applied?</label>
-              <select
-                id="import-mode"
-                value={importMode()}
-                onChange={(event) =>
-                  setImportMode(
-                    event.currentTarget.value as 'replace' | 'merge',
-                  )
-                }
-              >
-                <option value="replace">Replace current settings</option>
-                <option value="merge">Merge shortcuts and places</option>
-              </select>
-              <div class="backup-actions">
-                <button class="add-button" type="button" onClick={applyBackup}>
-                  Apply backup
-                </button>
-                <button
-                  class="quiet-button"
-                  type="button"
-                  onClick={() => setImportValue(null)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </Show>
-          <Show when={importError()}>
-            <p class="error-message" role="alert">
-              {importError()}
-            </p>
-          </Show>
-        </section>
-        <div class="settings-bottom">
-          <button class="danger-button" type="button" onClick={reset}>
-            Reset to defaults
-          </button>
-          <button
-            class="add-button"
-            type="button"
-            onClick={() => settingsDialog?.close()}
-          >
-            Done
-          </button>
-        </div>
-      </dialog>
-
-      <dialog ref={shortcutDialog} class="editor-dialog">
-        <form onSubmit={saveShortcut}>
-          <div class="dialog-heading">
-            <div>
-              <p class="dialog-kicker">Shortcut</p>
-              <h2>{draft().id ? 'Edit shortcut' : 'Add shortcut'}</h2>
-            </div>
-            <button
-              class="icon-button"
-              type="button"
-              aria-label="Close shortcut editor"
-              onClick={() => shortcutDialog?.close()}
+              aria-label="Dismiss notice"
+              onClick={() => setNotice('')}
             >
               ×
             </button>
           </div>
-          <label for="shortcut-name">Name</label>
-          <input
-            id="shortcut-name"
-            required
-            maxlength="48"
-            value={draft().label}
-            onInput={(event) =>
-              setDraft({ ...draft(), label: event.currentTarget.value })
-            }
-            placeholder="A clear name"
-          />
-          <label for="shortcut-url">Website address</label>
-          <input
-            id="shortcut-url"
-            required
-            value={draft().url}
-            onInput={(event) =>
-              setDraft({ ...draft(), url: event.currentTarget.value })
-            }
-            placeholder="example.com"
-            inputmode="url"
-          />
-          <label for="shortcut-group">Group</label>
-          <select
-            id="shortcut-group"
-            value={draft().groupId}
-            onChange={(event) =>
-              setDraft({ ...draft(), groupId: event.currentTarget.value })
-            }
-          >
-            <For each={config().groups}>
-              {(group) => <option value={group.id}>{group.label}</option>}
-            </For>
-          </select>
-          <label class="check-label">
-            <input
-              type="checkbox"
-              checked={draft().favorite}
-              onChange={(event) =>
-                setDraft({ ...draft(), favorite: event.currentTarget.checked })
-              }
-            />{' '}
-            Show on my favorites shelf
-          </label>
-          <p class="form-help">Links must use HTTPS. They open in a new tab.</p>
-          <div class="form-actions">
+        </Show>
+
+        <dialog
+          ref={settingsDialog}
+          class="settings-dialog"
+          aria-labelledby="settings-title"
+          onClose={() => undefined}
+        >
+          <div class="dialog-heading">
+            <div>
+              <p class="dialog-kicker">Your browser</p>
+              <h2 id="settings-title">Settings & backup</h2>
+            </div>
             <button
-              class="quiet-button"
+              class="icon-button"
               type="button"
-              onClick={() => shortcutDialog?.close()}
+              aria-label="Close settings"
+              onClick={() => settingsDialog?.close()}
             >
-              Cancel
-            </button>
-            <button class="add-button" type="submit">
-              Save shortcut
+              ×
             </button>
           </div>
-        </form>
-      </dialog>
-    </main>
+          <p class="dialog-copy">
+            Your setup stays on this device. Keep a JSON copy if you want to
+            move it later.
+          </p>
+          <div class="settings-summary">
+            <span>{config().shortcuts.length} shortcuts</span>
+            <span>{config().weather.locations.length} saved places</span>
+            <span>{config().weather.units} units</span>
+          </div>
+          <section class="settings-block">
+            <h3>Appearance</h3>
+            <label for="theme-choice">Theme</label>
+            <select
+              id="theme-choice"
+              value={themeChoice()}
+              onChange={(event) =>
+                chooseTheme(event.currentTarget.value as ThemeChoice)
+              }
+            >
+              <option value="system">Match system</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+            <BackgroundControls
+              idPrefix="settings"
+              variant="select"
+              background={config().appearance.background}
+              onChange={setBackground}
+            />
+            <label class="check-label">
+              <input
+                type="checkbox"
+                checked={config().quote.enabled}
+                onChange={(event) =>
+                  persist({
+                    ...config(),
+                    quote: { enabled: event.currentTarget.checked },
+                  })
+                }
+              />{' '}
+              Show quote above search
+            </label>
+          </section>
+          <section class="settings-block">
+            <h3>Search</h3>
+            <label for="default-provider">Default provider</label>
+            <select
+              id="default-provider"
+              value={provider().id}
+              onChange={(event) => setProvider(event.currentTarget.value)}
+            >
+              <For each={searchProviders}>
+                {(item) => (
+                  <option value={item.id}>
+                    {item.family}: {item.label}
+                  </option>
+                )}
+              </For>
+            </select>
+          </section>
+          <section class="settings-block">
+            <h3>Weather locations</h3>
+            <label for="weather-units">Temperature</label>
+            <select
+              id="weather-units"
+              value={config().weather.units}
+              onChange={(event) =>
+                changeWeatherUnits(
+                  event.currentTarget.value as 'metric' | 'imperial',
+                )
+              }
+            >
+              <option value="metric">Celsius</option>
+              <option value="imperial">Fahrenheit</option>
+            </select>
+            <ul class="location-list">
+              <For
+                each={[...config().weather.locations].sort(
+                  (a, b) => a.order - b.order,
+                )}
+              >
+                {(item, index) => (
+                  <li class="saved-place">
+                    <div class="place-description">
+                      <span>
+                        {item.label}
+                        {item.id === config().weather.activeLocationId ? (
+                          <small class="active-tag">Current</small>
+                        ) : null}
+                      </span>
+                      <small>
+                        {item.latitude.toFixed(2)}, {item.longitude.toFixed(2)},{' '}
+                        {item.timezone}
+                      </small>
+                    </div>
+                    <div class="place-actions">
+                      <Show
+                        when={item.id !== config().weather.activeLocationId}
+                      >
+                        <button
+                          type="button"
+                          class="place-action"
+                          onClick={() => {
+                            if (
+                              persist(
+                                {
+                                  ...config(),
+                                  weather: {
+                                    ...config().weather,
+                                    activeLocationId: item.id,
+                                  },
+                                },
+                                `${item.label} is now active.`,
+                              )
+                            )
+                              void refreshWeather(false, item);
+                          }}
+                        >
+                          Show
+                        </button>
+                      </Show>
+                      <button
+                        type="button"
+                        class="place-action"
+                        aria-label={`Move ${item.label} up`}
+                        disabled={index() === 0}
+                        onClick={() => reorderWeatherLocation(item, -1)}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        class="place-action"
+                        aria-label={`Move ${item.label} down`}
+                        disabled={
+                          index() === config().weather.locations.length - 1
+                        }
+                        onClick={() => reorderWeatherLocation(item, 1)}
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        class="place-action"
+                        onClick={() => renameWeatherLocation(item)}
+                      >
+                        Rename
+                      </button>
+                      <button
+                        type="button"
+                        class="place-action remove-place"
+                        onClick={() => removeWeatherLocation(item)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </li>
+                )}
+              </For>
+            </ul>
+            <form class="city-search" onSubmit={findCities}>
+              <label for="city-search">Add a place</label>
+              <div class="city-search-row">
+                <input
+                  id="city-search"
+                  type="search"
+                  minlength="2"
+                  maxlength="80"
+                  placeholder="Search city name"
+                  value={cityQuery()}
+                  onInput={(event) => setCityQuery(event.currentTarget.value)}
+                />
+                <button
+                  class="secondary-button"
+                  type="submit"
+                  disabled={findingCities()}
+                >
+                  {findingCities() ? 'Searching…' : 'Search places'}
+                </button>
+              </div>
+            </form>
+            <Show when={cityError()}>
+              <p class="error-message" role="alert">
+                {cityError()}
+              </p>
+            </Show>
+            <Show when={cityResults().length > 0}>
+              <ul class="city-results" aria-label="Place search results">
+                <For each={cityResults()}>
+                  {(city) => (
+                    <li>
+                      <div>
+                        <strong>{city.label}</strong>
+                        <small>
+                          {[city.region, city.country]
+                            .filter(Boolean)
+                            .join(', ')}
+                        </small>
+                      </div>
+                      <button
+                        class="secondary-button"
+                        type="button"
+                        onClick={() => addWeatherLocation(city)}
+                      >
+                        Add to saved places
+                      </button>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+          </section>
+          <section class="settings-block">
+            <h3>Move or restore settings</h3>
+            <div class="backup-actions">
+              <button
+                class="secondary-button"
+                type="button"
+                onClick={downloadBackup}
+              >
+                Export JSON
+              </button>
+              <button
+                class="secondary-button"
+                type="button"
+                onClick={() => importInput?.click()}
+              >
+                Choose JSON file
+              </button>
+              <input
+                ref={importInput}
+                class="sr-only"
+                type="file"
+                accept="application/json,.json"
+                onChange={selectBackup}
+              />
+            </div>
+            <Show when={importValue()}>
+              <div class="import-preview">
+                <p>
+                  This file has {importValue()!.shortcuts.length} shortcuts and{' '}
+                  {importValue()!.weather.locations.length} saved weather
+                  locations:
+                </p>
+                <ul class="import-locations">
+                  <For each={importValue()!.weather.locations}>
+                    {(location) => (
+                      <li>
+                        {location.label} — {location.latitude},{' '}
+                        {location.longitude} · {location.timezone}
+                      </li>
+                    )}
+                  </For>
+                </ul>
+                <label for="import-mode">How should it be applied?</label>
+                <select
+                  id="import-mode"
+                  value={importMode()}
+                  onChange={(event) =>
+                    setImportMode(
+                      event.currentTarget.value as 'replace' | 'merge',
+                    )
+                  }
+                >
+                  <option value="replace">Replace current settings</option>
+                  <option value="merge">Merge shortcuts and places</option>
+                </select>
+                <div class="backup-actions">
+                  <button
+                    class="add-button"
+                    type="button"
+                    onClick={applyBackup}
+                  >
+                    Apply backup
+                  </button>
+                  <button
+                    class="quiet-button"
+                    type="button"
+                    onClick={() => setImportValue(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </Show>
+            <Show when={importError()}>
+              <p class="error-message" role="alert">
+                {importError()}
+              </p>
+            </Show>
+          </section>
+          <div class="settings-bottom">
+            <button class="danger-button" type="button" onClick={reset}>
+              Reset to defaults
+            </button>
+            <button
+              class="add-button"
+              type="button"
+              onClick={() => settingsDialog?.close()}
+            >
+              Done
+            </button>
+          </div>
+        </dialog>
+
+        <dialog ref={shortcutDialog} class="editor-dialog">
+          <form onSubmit={saveShortcut}>
+            <div class="dialog-heading">
+              <div>
+                <p class="dialog-kicker">Shortcut</p>
+                <h2>{draft().id ? 'Edit shortcut' : 'Add shortcut'}</h2>
+              </div>
+              <button
+                class="icon-button"
+                type="button"
+                aria-label="Close shortcut editor"
+                onClick={() => shortcutDialog?.close()}
+              >
+                ×
+              </button>
+            </div>
+            <label for="shortcut-name">Name</label>
+            <input
+              id="shortcut-name"
+              required
+              maxlength="48"
+              value={draft().label}
+              onInput={(event) =>
+                setDraft({ ...draft(), label: event.currentTarget.value })
+              }
+              placeholder="A clear name"
+            />
+            <label for="shortcut-url">Website address</label>
+            <input
+              id="shortcut-url"
+              required
+              value={draft().url}
+              onInput={(event) =>
+                setDraft({ ...draft(), url: event.currentTarget.value })
+              }
+              placeholder="example.com"
+              inputmode="url"
+            />
+            <label for="shortcut-group">Group</label>
+            <select
+              id="shortcut-group"
+              value={draft().groupId}
+              onChange={(event) =>
+                setDraft({ ...draft(), groupId: event.currentTarget.value })
+              }
+            >
+              <For each={config().groups}>
+                {(group) => <option value={group.id}>{group.label}</option>}
+              </For>
+            </select>
+            <label class="check-label">
+              <input
+                type="checkbox"
+                checked={draft().favorite}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft(),
+                    favorite: event.currentTarget.checked,
+                  })
+                }
+              />{' '}
+              Show on my favorites shelf
+            </label>
+            <p class="form-help">
+              Links must use HTTPS. They open in a new tab.
+            </p>
+            <div class="form-actions">
+              <button
+                class="quiet-button"
+                type="button"
+                onClick={() => shortcutDialog?.close()}
+              >
+                Cancel
+              </button>
+              <button class="add-button" type="submit">
+                Save shortcut
+              </button>
+            </div>
+          </form>
+        </dialog>
+      </main>
+    </>
   );
 }
 

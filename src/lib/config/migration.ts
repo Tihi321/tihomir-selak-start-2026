@@ -1,5 +1,12 @@
-import { createDefaultConfig, defaultGroups } from '@/data/defaults';
+import { backgroundPhotos } from '@/data/backgrounds';
 import {
+  LEGACY_FACEBOOK_URL,
+  createDefaultConfig,
+  defaultGroups,
+  defaultShortcuts,
+} from '@/data/defaults';
+import {
+  normalizeImageUrl,
   normalizeShortcutUrl,
   startPageConfigSchema,
   type StartPageConfig,
@@ -28,6 +35,74 @@ function parseStoredJson(value: string | undefined): unknown {
   if (!value) return undefined;
   try {
     return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function upgradeConfig(raw: unknown): unknown {
+  if (!isRecord(raw) || raw.version !== 1) return raw;
+  const upgraded: Record<string, unknown> = {
+    ...raw,
+    version: 2,
+    appearance: { background: { kind: 'field', photo: 'bg' } },
+  };
+  const currentFacebook = defaultShortcuts.find(
+    ({ id }) => id === 'facebook-messages',
+  )!;
+  const slack = defaultShortcuts.find(({ id }) => id === 'slack')!;
+  if (Array.isArray(raw.shortcuts)) {
+    let shortcuts: unknown[] = raw.shortcuts.map((entry) =>
+      isRecord(entry) &&
+      entry.id === 'facebook-messages' &&
+      entry.source === 'default' &&
+      entry.url === LEGACY_FACEBOOK_URL
+        ? { ...entry, url: currentFacebook.url }
+        : entry,
+    );
+    if (!shortcuts.some((entry) => isRecord(entry) && entry.id === 'slack')) {
+      const maxOrder = shortcuts.reduce<number>(
+        (max, entry) =>
+          isRecord(entry) && typeof entry.order === 'number'
+            ? Math.max(max, entry.order)
+            : max,
+        -1,
+      );
+      shortcuts = [...shortcuts, { ...slack, order: maxOrder + 1 }];
+    }
+    upgraded.shortcuts = shortcuts;
+  }
+  if (
+    Array.isArray(raw.groups) &&
+    !raw.groups.some((group) => isRecord(group) && group.id === 'work')
+  ) {
+    const work = defaultGroups.find(({ id }) => id === 'work')!;
+    upgraded.groups = [...raw.groups, { ...work }];
+  }
+  return upgraded;
+}
+
+function legacyBackground(value: string | undefined) {
+  if (!value) return undefined;
+  if (value === '/images/bg.jpeg')
+    return { kind: 'photo' as const, photo: 'bg' };
+  const match = /^\/images\/bg\/(bg\d{3})\.jpg$/.exec(value);
+  if (match) {
+    const id = match[1]!;
+    return backgroundPhotos.some((photo) => photo.id === id)
+      ? { kind: 'photo' as const, photo: id }
+      : undefined;
+  }
+  try {
+    return {
+      kind: 'custom' as const,
+      photo: 'bg',
+      customUrl: normalizeImageUrl(value),
+    };
   } catch {
     return undefined;
   }
@@ -120,6 +195,9 @@ export function migrateLegacyConfig(storage: Storage): {
     if (!value && key === 'text-search-engine')
       config.search.defaultProvider = fallback;
   }
+
+  const background = legacyBackground(readString(storage, 'bg-image-url'));
+  if (background) config.appearance.background = background;
 
   config.updatedAt = new Date().toISOString();
   return { config: startPageConfigSchema.parse(config), foundLegacyData };

@@ -17,6 +17,25 @@ const safeUrl = z
     }
   }, 'Use a complete HTTPS link or a mailto link.');
 
+const httpsImageUrl = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2048)
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' && !url.username && !url.password;
+    } catch {
+      return false;
+    }
+  }, 'Use a complete HTTPS image link.');
+
+export const backgroundKinds = ['field', 'photo', 'custom', 'plain'] as const;
+export type BackgroundKind = (typeof backgroundKinds)[number];
+
+export const CURRENT_CONFIG_VERSION = 2;
+
 export const shortcutSchema = z.object({
   id: z.string().trim().min(1).max(80),
   label: z.string().trim().min(1).max(48),
@@ -46,7 +65,7 @@ export const weatherLocationSchema = z.object({
 
 export const startPageConfigSchema = z
   .object({
-    version: z.literal(1),
+    version: z.literal(2),
     shortcuts: z.array(shortcutSchema).max(300),
     groups: z.array(shortcutGroupSchema).max(40),
     search: z.object({
@@ -59,8 +78,11 @@ export const startPageConfigSchema = z
       units: z.enum(['metric', 'imperial']),
     }),
     appearance: z.object({
-      theme: z.enum(['night']),
-      background: z.enum(['quiet-night']),
+      background: z.object({
+        kind: z.enum(backgroundKinds),
+        photo: z.string().trim().min(1).max(40),
+        customUrl: httpsImageUrl.optional(),
+      }),
     }),
     quote: z.object({ enabled: z.boolean() }),
     audio: z.object({ enabled: z.boolean(), volume: z.number().min(0).max(1) }),
@@ -107,6 +129,7 @@ export type Shortcut = z.infer<typeof shortcutSchema>;
 export type ShortcutGroup = z.infer<typeof shortcutGroupSchema>;
 export type WeatherLocation = z.infer<typeof weatherLocationSchema>;
 export type StartPageConfig = z.infer<typeof startPageConfigSchema>;
+export type Background = StartPageConfig['appearance']['background'];
 
 export function normalizeShortcutUrl(raw: string): string {
   const trimmed = raw.trim();
@@ -130,4 +153,30 @@ export function normalizeShortcutUrl(raw: string): string {
       'Links with embedded usernames or passwords are not allowed.',
     );
   return parsed.toString();
+}
+
+export function normalizeImageUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) throw new Error('Enter an image address.');
+  if (/^[a-z][a-z\d+.-]*:/i.test(trimmed) && !/^https:\/\//i.test(trimmed)) {
+    throw new Error('Only HTTPS image links are allowed.');
+  }
+  const candidate = /^https:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    throw new Error('Enter a complete image address.');
+  }
+  if (parsed.protocol !== 'https:')
+    throw new Error('Only HTTPS image links are allowed.');
+  if (parsed.username || parsed.password)
+    throw new Error(
+      'Links with embedded usernames or passwords are not allowed.',
+    );
+  const result = parsed.toString();
+  if (result.length > 2048) throw new Error('That image address is too long.');
+  return result;
 }

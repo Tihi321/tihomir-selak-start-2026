@@ -1,0 +1,102 @@
+/* Mirrors tihomir-selak-2026/src/styles/system/tokens.css, keep in sync. */
+/*
+  Design system tokens ("bench notebook"). Two themes through light-dark():
+  ink navy (dark) and cool "lab glass" (light). Token names are roles, not
+  hues. Without data-theme the OS decides; theme-init.js sets it on choice.
+  Breakpoints cannot be CSS variables inside media queries, so they are
+  documented constants: sm = 720px, lg = 1024px.
+*/
+:root {
+  color-scheme: light dark;
+
+  /* Color: light-dark(<light>, <dark>) */
+  --c-carbon: light-dark(#eef2f8, #0a1020);
+  --c-slate: light-dark(#e2e8f2, #111a2e);
+  --c-rule: light-dark(#cdd6e4, #1c2840);
+  --c-rule-strong: light-dark(#aab7cc, #2c3b58);
+  --c-graphite: light-dark(#53607a, #8b98b0);
+  --c-paper: light-dark(#1a2336, #e4e7ee);
+  --c-paper-bright: light-dark(#0a1020, #f5f7fb);
+  --c-phosphor: light-dark(#935507, #e0a458);
+  --c-phosphor-dim: light-dark(rgb(147 85 7 / 14%), rgb(224 164 88 / 14%));
+  /* Field and motif ink only, never text or links. */
+  --c-synapse: light-dark(#2f6fb0, #5fb8e6);
+  --c-synapse-dim: light-dark(rgb(47 111 176 / 22%), rgb(95 184 230 / 22%));
+
+  /* Type families */
+  --font-sans: var(--font-archivo), Archivo, Arial, sans-serif;
+  --font-mono:
+    var(--font-martian-mono), 'Martian Mono', ui-monospace, monospace;
+
+  /* Type scale, major third on a 17px base (px / line-height) */
+  --step--2: 0.7059rem; /* 12 / 1.4 */
+  --lh--2: 1.4;
+  --step--1: 0.8235rem; /* 14 / 1.45 */
+  --lh--1: 1.45;
+  --step-0: 1rem; /* 17 / 1.6 */
+  --lh-0: 1.6;
+  --step-1: 1.2353rem; /* 21 / 1.35 */
+  --lh-1: 1.35;
+  --step-2: 1.5294rem; /* 26 / 1.25 */
+  --lh-2: 1.25;
+  --step-3: 1.9412rem; /* 33 / 1.15 */
+  --lh-3: 1.15;
+  --step-4: 2.4706rem; /* 42 / 1.08 */
+  --lh-4: 1.08;
+  --step-5: 3.2941rem; /* 56 / 1.02 */
+  --lh-5: 1.02;
+  --measure: 66ch;
+
+  /* Space, 4px base */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+  --space-10: 128px;
+
+  /* Radii follow hierarchy */
+  --radius-0: 0;
+  --radius-1: 2px;
+  --radius-2: 4px;
+
+  /* Borders */
+  --border-hair: 1px solid var(--c-rule);
+  --border-strong: 1px solid var(--c-rule-strong);
+  --border-boundary: 1px dashed var(--c-rule-strong);
+
+  /* Motion */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* Layout */
+  --page-max: 1200px;
+  --page-gutter: clamp(16px, 4vw, 48px);
+  --col-gap: 24px;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+@media (max-width: 719.98px) {
+  :root {
+    --col-gap: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0.01ms;
+    --dur-base: 0.01ms;
+  }
+}

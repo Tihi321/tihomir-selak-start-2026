@@ -1,0 +1,44 @@
+---
+import '../styles/global.css';
+import { Font } from 'astro:assets';
+import NeuralField from '../components/NeuralField.astro';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = 'Start — Tihomir Selak',
+  description = 'A quiet place to find your next destination.',
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <script is:inline src="/scripts/theme-init.js"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="description" content={description} />
+    <meta
+      name="theme-color"
+      content="#0A1020"
+      media="(prefers-color-scheme: dark)"
+    />
+    <meta
+      name="theme-color"
+      content="#EEF2F8"
+      media="(prefers-color-scheme: light)"
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <Font cssVariable="--font-archivo" preload />
+    <Font cssVariable="--font-martian-mono" preload />
+    <title>{title}</title>
+  </head>
+  <body>
+    <NeuralField />
+    <slot />
+  </body>
+</html>
