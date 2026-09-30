@@ -3,6 +3,9 @@ import type {
   ShortcutGroup,
   StartPageConfig,
 } from '@/lib/config/schema';
+import { defaultPhotoId } from '@/data/backgrounds';
+
+export const LEGACY_FACEBOOK_URL = 'https://www.facebook.com/messages/e2ee/';
 
 export const defaultGroups: ShortcutGroup[] = [
   { id: 'daily', label: 'Daily', order: 0 },
@@ -28,8 +31,15 @@ const entries: Array<[string, string, string, string, boolean]> = [
   [
     'facebook-messages',
     'Facebook Messages',
-    'https://www.facebook.com/messages/e2ee/',
+    'https://www.facebook.com/messages/',
     'daily',
+    true,
+  ],
+  [
+    'slack',
+    'Slack',
+    'https://app.slack.com/client/T03TQ1AE0/C01R9LA2UTW',
+    'work',
     true,
   ],
   ['linkedin', 'LinkedIn', 'https://www.linkedin.com/', 'daily', true],
@@ -82,7 +92,7 @@ export const defaultShortcuts: Shortcut[] = entries.map(
 );
 
 export const createDefaultConfig = (): StartPageConfig => ({
-  version: 1,
+  version: 2,
   shortcuts: defaultShortcuts.map((shortcut) => ({ ...shortcut })),
   groups: defaultGroups.map((group) => ({ ...group })),
   search: { defaultProvider: 'google', recentProviders: [] },
@@ -100,7 +110,7 @@ export const createDefaultConfig = (): StartPageConfig => ({
     activeLocationId: 'osijek',
     units: 'metric',
   },
-  appearance: { theme: 'night', background: 'quiet-night' },
+  appearance: { background: { kind: 'field', photo: defaultPhotoId } },
   quote: { enabled: true },
   audio: { enabled: false, volume: 0.55 },
   updatedAt: new Date(0).toISOString(),

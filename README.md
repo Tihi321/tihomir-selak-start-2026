@@ -33,3 +33,9 @@ yarn test:e2e
 ```
 
 The project is a static Astro site intended for Netlify previews. Production hosting and the custom domain are not configured by this foundation work.
+
+## Backgrounds, quotes and default links
+
+- Background photos in `public/backgrounds/` are reused from the owner's earlier astro-start-tab project.
+- The quote above the search box comes from the personal CDN (`cdn.tihomir-selak.from.hr`): the daily quote, and "Next" draws from the cached quote list. When the CDN is unreachable it falls back to cached data and then to the original local reflections.
+- Slack (`https://app.slack.com/client/T03TQ1AE0/C01R9LA2UTW`) is a committed default favorite. Stored version 1 settings are upgraded to version 2 on load, which also updates the default Facebook Messages link and adds Slack if it is missing.

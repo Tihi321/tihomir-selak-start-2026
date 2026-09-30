@@ -1,6 +1,10 @@
 import { createDefaultConfig } from '@/data/defaults';
-import { startPageConfigSchema, type StartPageConfig } from './schema';
-import { migrateLegacyConfig } from './migration';
+import {
+  CURRENT_CONFIG_VERSION,
+  startPageConfigSchema,
+  type StartPageConfig,
+} from './schema';
+import { migrateLegacyConfig, upgradeConfig } from './migration';
 
 export const CONFIG_KEY = 'start-page:config:v1';
 export const BACKUP_KEY = 'start-page:config:last-known-good';
@@ -15,7 +19,7 @@ export type StorageResult = {
 };
 
 export function parseConfig(value: unknown): StartPageConfig {
-  return startPageConfigSchema.parse(value);
+  return startPageConfigSchema.parse(upgradeConfig(value));
 }
 
 export function mergeConfigs(
@@ -63,7 +67,10 @@ export function loadConfig(storage: Storage): StorageResult {
     if (raw) {
       try {
         const value = JSON.parse(raw) as { version?: unknown };
-        if (typeof value?.version === 'number' && value.version > 1) {
+        if (
+          typeof value?.version === 'number' &&
+          value.version > CURRENT_CONFIG_VERSION
+        ) {
           return {
             config: createDefaultConfig(),
             recovered: false,
@@ -73,8 +80,16 @@ export function loadConfig(storage: Storage): StorageResult {
               'These browser settings were saved by a newer version of the page. They were left untouched; update this page before making changes.',
           };
         }
+        const config = parseConfig(value);
+        if ((value as { version?: unknown })?.version !== config.version) {
+          try {
+            saveConfig(storage, config);
+          } catch {
+            // The upgraded copy is still usable when it cannot be persisted.
+          }
+        }
         return {
-          config: parseConfig(value),
+          config,
           recovered: false,
           migrated: false,
         };
@@ -136,7 +151,10 @@ export function saveConfig(
   if (current) {
     try {
       const parsed = JSON.parse(current) as { version?: unknown };
-      if (typeof parsed?.version === 'number' && parsed.version > 1)
+      if (
+        typeof parsed?.version === 'number' &&
+        parsed.version > CURRENT_CONFIG_VERSION
+      )
         throw new Error(
           'Newer browser settings were left untouched. Update this page before saving changes.',
         );
