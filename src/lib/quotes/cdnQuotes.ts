@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import {
+  defaultStorage,
+  fetchJson,
+  localDateKey,
+  readJson,
+  writeJson,
+} from '@/lib/cdn/fetch';
 import { REFLECTION_AUTHOR, reflections } from '@/data/reflections';
 
 export type Quote = {
@@ -47,65 +54,6 @@ function cleanEntry(value: unknown): Entry | null {
   const text = parsed.data.text.trim();
   if (!text) return null;
   return { text, author: parsed.data.author?.trim() ?? '' };
-}
-
-function localDateKey(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${date.getFullYear()}-${month}-${day}`;
-}
-
-function defaultStorage(): Storage | undefined {
-  try {
-    return typeof localStorage === 'undefined' ? undefined : localStorage;
-  } catch {
-    return undefined;
-  }
-}
-
-function readJson(storage: Storage | undefined, key: string): unknown {
-  try {
-    const raw = storage?.getItem(key);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeJson(storage: Storage | undefined, key: string, value: unknown) {
-  try {
-    storage?.setItem(key, JSON.stringify(value));
-  } catch {
-    /* Quotes still work without a cache. */
-  }
-}
-
-async function fetchJson(
-  url: string,
-  fetcher: typeof fetch,
-  signal: AbortSignal | undefined,
-  timeoutMs: number,
-): Promise<unknown> {
-  const controller = new AbortController();
-  const abort = () => controller.abort();
-  if (signal?.aborted) controller.abort();
-  signal?.addEventListener('abort', abort, { once: true });
-  const timer = setTimeout(abort, timeoutMs);
-  try {
-    const request = fetcher(url, { signal: controller.signal });
-    const aborted = new Promise<never>((_, reject) => {
-      const fail = () => reject(new Error('Quote request was cancelled.'));
-      if (controller.signal.aborted) fail();
-      else controller.signal.addEventListener('abort', fail, { once: true });
-    });
-    const response = await Promise.race([request, aborted]);
-    if (!response.ok)
-      throw new Error(`Quote service returned ${response.status}.`);
-    return await Promise.race([response.json(), aborted]);
-  } finally {
-    clearTimeout(timer);
-    signal?.removeEventListener('abort', abort);
-  }
 }
 
 export function localReflectionQuote(

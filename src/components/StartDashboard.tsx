@@ -8,7 +8,9 @@ import {
   onMount,
 } from 'solid-js';
 import Background from '@/components/Background';
+import AudioPanel from '@/components/AudioPanel';
 import BackgroundControls from '@/components/BackgroundControls';
+import NewsPanel from '@/components/NewsPanel';
 import SynapseMark from '@/components/SynapseMark';
 import ThemeToggle, {
   currentThemeChoice,
@@ -21,12 +23,20 @@ import {
   getRandomQuote,
   type Quote,
 } from '@/lib/quotes/cdnQuotes';
+import { getDailyWord, type DailyWord } from '@/lib/daily/word';
+import {
+  createAudioEngine,
+  type AudioEngine,
+  type AudioState,
+} from '@/lib/audio/engine';
 import { createDefaultConfig } from '@/data/defaults';
 import {
   searchFamilies,
-  searchProviders,
   providerById,
+  providersFor,
+  resolveFamilyDefault,
   buildProviderUrl,
+  type SearchFamily,
 } from '@/data/providers';
 import {
   exportConfig,
@@ -98,10 +108,18 @@ export default function StartDashboard() {
   const [quoteBusy, setQuoteBusy] = createSignal(false);
   const [themeChoice, setThemeChoice] = createSignal<ThemeChoice>('system');
   const [bgOpen, setBgOpen] = createSignal(false);
+  const [audioOpen, setAudioOpen] = createSignal(false);
+  const [word, setWord] = createSignal<DailyWord | null>(null);
+  const [wordRequested, setWordRequested] = createSignal(false);
+  const [audioPlaying, setAudioPlaying] = createSignal(false);
+  // Creating the engine makes no audio elements. They appear on user action.
+  const engine: AudioEngine = createAudioEngine();
   let quoteToken = 0;
   let bgMenu: HTMLDivElement | undefined;
   let bgButton: HTMLButtonElement | undefined;
-  const [family, setFamily] = createSignal('web');
+  let audioMenu: HTMLDivElement | undefined;
+  let audioButton: HTMLButtonElement | undefined;
+  const [family, setFamily] = createSignal<SearchFamily>('web');
   const [query, setQuery] = createSignal('');
   const [showAll, setShowAll] = createSignal(false);
   const [filter, setFilter] = createSignal('');
@@ -128,7 +146,7 @@ export default function StartDashboard() {
   let cityAbort: AbortController | undefined;
 
   const provider = createMemo(() =>
-    providerById(config().search.defaultProvider),
+    resolveFamilyDefault(config().search, family()),
   );
   const activeLocation = createMemo(
     () =>
@@ -136,9 +154,7 @@ export default function StartDashboard() {
         ({ id }) => id === config().weather.activeLocationId,
       ) ?? config().weather.locations[0]!,
   );
-  const familyProviders = createMemo(() =>
-    searchProviders.filter((item) => item.family === family()),
-  );
+  const familyProviders = createMemo(() => providersFor(family()));
   const active = createMemo(() =>
     config()
       .shortcuts.filter((shortcut) => !shortcut.hidden)
@@ -217,7 +233,10 @@ export default function StartDashboard() {
     persist(
       {
         ...config(),
-        appearance: { background: { ...current, kind: 'field' } },
+        appearance: {
+          ...config().appearance,
+          background: { ...current, kind: 'field' },
+        },
       },
       'Your image could not be loaded, so the neural field is back.',
     );
@@ -264,12 +283,45 @@ export default function StartDashboard() {
   });
 
   createEffect(() => {
+    document.documentElement.dataset.focus = config().appearance.focus
+      ? 'on'
+      : 'off';
+  });
+
+  createEffect(() => {
     if (config().quote.enabled && !quote() && !quoteBusy())
       void loadDailyQuote();
   });
 
+  createEffect(() => {
+    if (config().word.enabled && !wordRequested()) {
+      setWordRequested(true);
+      void getDailyWord({ storage: browserStorage() }).then(setWord);
+    }
+  });
+
+  function toggleFocus() {
+    persist({
+      ...config(),
+      appearance: {
+        ...config().appearance,
+        focus: !config().appearance.focus,
+      },
+    });
+  }
+
+  function toggleBg() {
+    setAudioOpen(false);
+    setBgOpen(!bgOpen());
+  }
+  function toggleAudio() {
+    setBgOpen(false);
+    setAudioOpen(!audioOpen());
+  }
+
   function openSettings() {
     setBgOpen(false);
+    setAudioOpen(false);
     setThemeChoice(currentThemeChoice());
     settingsDialog?.showModal();
   }
@@ -293,13 +345,19 @@ export default function StartDashboard() {
     shortcutDialog?.showModal();
   }
 
-  function setProvider(id: string) {
-    const next = providerById(id);
-    setFamily(next.family);
+  function setFamilyTab(next: SearchFamily) {
+    setFamily(next);
+    persist({ ...config(), search: { ...config().search, family: next } });
+  }
+
+  function setProvider(id: string, target: SearchFamily = family()) {
+    if (providerById(id).id !== id || providerById(id).family !== target)
+      return;
     persist({
       ...config(),
       search: {
-        defaultProvider: id,
+        ...config().search,
+        defaults: { ...config().search.defaults, [target]: id },
         recentProviders: [
           id,
           ...config().search.recentProviders.filter((value) => value !== id),
@@ -310,10 +368,6 @@ export default function StartDashboard() {
 
   function search(event: SubmitEvent) {
     event.preventDefault();
-    if (query().trim() && !provider().queryTemplate)
-      setNotice(
-        `${provider().label} opened. Your prompt stays in the search field because this provider has no verified prefilled-search route.`,
-      );
     window.open(
       buildProviderUrl(provider(), query()),
       '_blank',
@@ -734,7 +788,7 @@ export default function StartDashboard() {
         };
     setConfig(loaded.config);
     setStorageReadOnly(loaded.readOnly ?? false);
-    setFamily(providerById(loaded.config.search.defaultProvider).family);
+    setFamily(loaded.config.search.family);
     if (loaded.notice) setNotice(loaded.notice);
     if (storage)
       void refreshWeather(
@@ -746,12 +800,56 @@ export default function StartDashboard() {
     setNow(new Date());
     setThemeChoice(currentThemeChoice());
     const clockTimer = window.setInterval(() => setNow(new Date()), 30_000);
+    const stopAudioListener = engine.subscribe((state: AudioState) =>
+      setAudioPlaying(state.mixPlaying || state.songPlaying),
+    );
     const handler = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (event.key === 'Escape' && bgOpen()) {
         setBgOpen(false);
         bgButton?.focus();
         return;
+      }
+      if (event.key === 'Escape' && audioOpen()) {
+        setAudioOpen(false);
+        audioButton?.focus();
+        return;
+      }
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        !event.altKey &&
+        (event.key === "'" || event.code === 'Quote')
+      ) {
+        event.preventDefault();
+        toggleFocus();
+        return;
+      }
+      if (
+        event.ctrlKey &&
+        event.altKey &&
+        !target?.matches('input, textarea, select, [contenteditable="true"]')
+      ) {
+        const match = /^(?:Digit|Numpad)([1-5])$/.exec(event.code);
+        if (match) {
+          event.preventDefault();
+          switch (match[1]) {
+            case '1':
+              engine.prev();
+              break;
+            case '2':
+              engine.togglePlaylist();
+              break;
+            case '3':
+              engine.next();
+              break;
+            case '4':
+              engine.stopAll();
+              break;
+            default:
+              engine.toggleMix(config().audio.mix);
+          }
+          return;
+        }
       }
       if (
         event.key === '/' &&
@@ -770,18 +868,18 @@ export default function StartDashboard() {
       }
     };
     const outside = (event: PointerEvent) => {
-      if (
-        bgOpen() &&
-        event.target instanceof Node &&
-        !bgMenu?.contains(event.target)
-      )
-        setBgOpen(false);
+      if (!(event.target instanceof Node)) return;
+      if (bgOpen() && !bgMenu?.contains(event.target)) setBgOpen(false);
+      if (audioOpen() && !audioMenu?.contains(event.target))
+        setAudioOpen(false);
     };
     window.addEventListener('keydown', handler);
     document.addEventListener('pointerdown', outside);
     onCleanup(() => {
       window.removeEventListener('keydown', handler);
       document.removeEventListener('pointerdown', outside);
+      stopAudioListener();
+      engine.dispose();
       quoteToken++;
       window.clearInterval(clockTimer);
       weatherAbort?.abort();
@@ -879,6 +977,63 @@ export default function StartDashboard() {
           </div>
           <div class="site-controls">
             <ThemeToggle />
+            <button
+              class="icon-btn"
+              type="button"
+              aria-label="Focus mode"
+              aria-pressed={config().appearance.focus}
+              title="Focus mode (Ctrl+')"
+              onClick={toggleFocus}
+            >
+              <svg
+                viewBox="0 0 20 20"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.25"
+                stroke-linecap="round"
+                aria-hidden="true"
+              >
+                <path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4" />
+                <circle cx="10" cy="10" r="2" fill="currentColor" />
+              </svg>
+            </button>
+            <div class="audio-menu" ref={audioMenu}>
+              <button
+                ref={audioButton}
+                class="icon-btn"
+                type="button"
+                aria-label="Sound"
+                aria-haspopup="true"
+                aria-expanded={audioOpen()}
+                aria-controls="audio-drawer"
+                onClick={toggleAudio}
+              >
+                <svg
+                  viewBox="0 0 20 20"
+                  width="16"
+                  height="16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.25"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M3 8v4h3l4 3.5v-11L6 8zM13 7.5a3.5 3.5 0 0 1 0 5M15.5 5.5a6.5 6.5 0 0 1 0 9" />
+                </svg>
+                <Show when={audioPlaying()}>
+                  <span class="playing-dot" data-testid="playing-dot" />
+                </Show>
+              </button>
+              <AudioPanel
+                engine={engine}
+                config={config().audio}
+                onChange={(audio) => persist({ ...config(), audio })}
+                open={audioOpen()}
+              />
+            </div>
             <div class="bg-menu" ref={bgMenu}>
               <button
                 ref={bgButton}
@@ -888,7 +1043,7 @@ export default function StartDashboard() {
                 aria-haspopup="true"
                 aria-expanded={bgOpen()}
                 aria-controls="background-popover"
-                onClick={() => setBgOpen(!bgOpen())}
+                onClick={toggleBg}
               >
                 <svg
                   viewBox="0 0 20 20"
@@ -1019,7 +1174,14 @@ export default function StartDashboard() {
                 onChange={(event) => setProvider(event.currentTarget.value)}
               >
                 <For each={familyProviders()}>
-                  {(item) => <option value={item.id}>{item.label}</option>}
+                  {(item) => (
+                    <option
+                      value={item.id}
+                      selected={item.id === provider().id}
+                    >
+                      {item.label}
+                    </option>
+                  )}
                 </For>
               </select>
               <input
@@ -1051,13 +1213,7 @@ export default function StartDashboard() {
                       type="button"
                       classList={{ selected: family() === item.id }}
                       aria-pressed={family() === item.id}
-                      onClick={() =>
-                        setProvider(
-                          searchProviders.find(
-                            (candidate) => candidate.family === item.id,
-                          )!.id,
-                        )
-                      }
+                      onClick={() => setFamilyTab(item.id)}
                     >
                       {item.label}
                     </button>
@@ -1068,15 +1224,22 @@ export default function StartDashboard() {
                 <kbd>/</kbd> to focus
               </span>
             </div>
-            <p class="privacy-note mono">
-              {provider().queryTemplate
-                ? provider().privacyNote
-                : `${provider().label} opens its homepage. Text stays in this field; enter your prompt on that site.`}
-            </p>
+            <p class="privacy-note mono">{provider().privacyNote}</p>
+            <Show when={config().word.enabled && word()}>
+              {(item) => (
+                <details class="word-of-day">
+                  <summary class="mono">
+                    <span class="word-of-day__kicker">Word of the day</span>
+                    <span class="word-of-day__word">{item().word}</span>
+                  </summary>
+                  <p>{item().meaning}</p>
+                </details>
+              )}
+            </Show>
           </section>
 
           <section
-            class="tile-section grid-12"
+            class="tile-section focus-hide grid-12"
             aria-labelledby="favorites-heading"
           >
             <h2 class="tile-section__label" id="favorites-heading">
@@ -1232,6 +1395,14 @@ export default function StartDashboard() {
               </Show>
             </div>
           </section>
+
+          <Show when={config().news.enabled}>
+            <NewsPanel
+              config={config().news}
+              onChange={(news) => persist({ ...config(), news })}
+              storage={browserStorage()}
+            />
+          </Show>
         </div>
 
         <footer class="page-footer wrap mono">
@@ -1339,23 +1510,143 @@ export default function StartDashboard() {
               />{' '}
               Show quote above search
             </label>
+            <label class="check-label">
+              <input
+                type="checkbox"
+                checked={config().word.enabled}
+                onChange={(event) =>
+                  persist({
+                    ...config(),
+                    word: { enabled: event.currentTarget.checked },
+                  })
+                }
+              />{' '}
+              Show word of the day
+            </label>
+            <label class="check-label">
+              <input
+                type="checkbox"
+                checked={config().news.enabled}
+                onChange={(event) =>
+                  persist({
+                    ...config(),
+                    news: {
+                      ...config().news,
+                      enabled: event.currentTarget.checked,
+                    },
+                  })
+                }
+              />{' '}
+              Show news
+            </label>
+          </section>
+          <section class="settings-block">
+            <h3>Keyboard</h3>
+            <dl class="keyboard-list">
+              <div>
+                <dt>Focus the search box</dt>
+                <dd>
+                  <kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd>
+                </dd>
+              </div>
+              <div>
+                <dt>Focus mode</dt>
+                <dd>
+                  <kbd>Ctrl</kbd>+<kbd>'</kbd>
+                </dd>
+              </div>
+              <div>
+                <dt>Previous song</dt>
+                <dd>
+                  <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>1</kbd>
+                </dd>
+              </div>
+              <div>
+                <dt>Play or pause</dt>
+                <dd>
+                  <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>2</kbd>
+                </dd>
+              </div>
+              <div>
+                <dt>Next song</dt>
+                <dd>
+                  <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>3</kbd>
+                </dd>
+              </div>
+              <div>
+                <dt>Stop all sound</dt>
+                <dd>
+                  <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>4</kbd>
+                </dd>
+              </div>
+              <div>
+                <dt>Start or stop the saved mix</dt>
+                <dd>
+                  <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>5</kbd>
+                </dd>
+              </div>
+              <div>
+                <dt>Close a menu</dt>
+                <dd>
+                  <kbd>Esc</kbd>
+                </dd>
+              </div>
+            </dl>
           </section>
           <section class="settings-block">
             <h3>Search</h3>
-            <label for="default-provider">Default provider</label>
+            <label for="start-family">Start on</label>
             <select
-              id="default-provider"
-              value={provider().id}
-              onChange={(event) => setProvider(event.currentTarget.value)}
+              id="start-family"
+              value={config().search.family}
+              onChange={(event) => {
+                const next = event.currentTarget.value as SearchFamily;
+                setFamily(next);
+                persist({
+                  ...config(),
+                  search: { ...config().search, family: next },
+                });
+              }}
             >
-              <For each={searchProviders}>
+              <For each={searchFamilies}>
                 {(item) => (
-                  <option value={item.id}>
-                    {item.family}: {item.label}
+                  <option
+                    value={item.id}
+                    selected={item.id === config().search.family}
+                  >
+                    {item.label}
                   </option>
                 )}
               </For>
             </select>
+            <For each={searchFamilies}>
+              {(item) => (
+                <>
+                  <label for={`default-${item.id}`}>{item.label} default</label>
+                  <select
+                    id={`default-${item.id}`}
+                    value={resolveFamilyDefault(config().search, item.id).id}
+                    onChange={(event) =>
+                      setProvider(event.currentTarget.value, item.id)
+                    }
+                  >
+                    <For each={providersFor(item.id)}>
+                      {(option) => (
+                        <option
+                          value={option.id}
+                          selected={
+                            option.id ===
+                            resolveFamilyDefault(config().search, item.id).id
+                          }
+                        >
+                          {option.label}
+                        </option>
+                      )}
+                    </For>
+                  </select>
+                </>
+              )}
+            </For>
           </section>
           <section class="settings-block">
             <h3>Weather locations</h3>

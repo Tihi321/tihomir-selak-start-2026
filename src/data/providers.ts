@@ -1,4 +1,5 @@
-export type SearchFamily = 'web' | 'ai' | 'video' | 'music';
+export const searchFamilyIds = ['web', 'ai', 'video', 'music'] as const;
+export type SearchFamily = (typeof searchFamilyIds)[number];
 
 export type SearchProvider = {
   id: string;
@@ -57,8 +58,9 @@ export const searchProviders: SearchProvider[] = [
     label: 'Perplexity',
     family: 'ai',
     homepage: 'https://www.perplexity.ai/',
+    queryTemplate: 'https://www.perplexity.ai/search?q={query}',
     icon: 'P',
-    privacyNote: 'Opens Perplexity. Enter your prompt there.',
+    privacyNote: 'Your prompt is sent to Perplexity.',
     enabledByDefault: true,
   },
   {
@@ -66,8 +68,9 @@ export const searchProviders: SearchProvider[] = [
     label: 'ChatGPT',
     family: 'ai',
     homepage: 'https://chatgpt.com/',
+    queryTemplate: 'https://chatgpt.com/?q={query}&hints=search',
     icon: 'C',
-    privacyNote: 'Opens ChatGPT. Enter your prompt there.',
+    privacyNote: 'Your prompt is sent to ChatGPT.',
     enabledByDefault: true,
   },
   {
@@ -75,8 +78,40 @@ export const searchProviders: SearchProvider[] = [
     label: 'Copilot',
     family: 'ai',
     homepage: 'https://copilot.microsoft.com/',
+    queryTemplate:
+      'https://www.bing.com/search?showconv=1&sendquery=1&q={query}',
     icon: 'M',
-    privacyNote: 'Opens Copilot. Enter your prompt there.',
+    privacyNote: 'Your prompt is sent to Microsoft Copilot.',
+    enabledByDefault: true,
+  },
+  {
+    id: 'mistral',
+    label: 'Mistral Le Chat',
+    family: 'ai',
+    homepage: 'https://chat.mistral.ai/',
+    queryTemplate: 'https://chat.mistral.ai/chat?q={query}',
+    icon: 'L',
+    privacyNote: 'Your prompt is sent to Mistral Le Chat.',
+    enabledByDefault: true,
+  },
+  {
+    id: 'grok',
+    label: 'Grok',
+    family: 'ai',
+    homepage: 'https://grok.com/',
+    queryTemplate: 'https://grok.com/?q={query}',
+    icon: 'X',
+    privacyNote: 'Your prompt is sent to Grok.',
+    enabledByDefault: true,
+  },
+  {
+    id: 'claude',
+    label: 'Claude',
+    family: 'ai',
+    homepage: 'https://claude.ai/',
+    queryTemplate: 'https://claude.ai/new?q={query}',
+    icon: 'A',
+    privacyNote: 'Your prompt is sent to Claude.',
     enabledByDefault: true,
   },
   {
@@ -87,6 +122,46 @@ export const searchProviders: SearchProvider[] = [
     queryTemplate: 'https://www.youtube.com/results?search_query={query}',
     icon: '▶',
     privacyNote: 'Search terms are sent to YouTube.',
+    enabledByDefault: true,
+  },
+  {
+    id: 'skillshare',
+    label: 'Skillshare',
+    family: 'video',
+    homepage: 'https://www.skillshare.com/',
+    queryTemplate: 'https://www.skillshare.com/en/search?query={query}',
+    icon: 'S',
+    privacyNote: 'Search terms are sent to Skillshare.',
+    enabledByDefault: true,
+  },
+  {
+    id: 'udemy',
+    label: 'Udemy',
+    family: 'video',
+    homepage: 'https://www.udemy.com/',
+    queryTemplate: 'https://www.udemy.com/courses/search/?src=ukw&q={query}',
+    icon: 'U',
+    privacyNote: 'Search terms are sent to Udemy.',
+    enabledByDefault: true,
+  },
+  {
+    id: 'zenva',
+    label: 'Zenva',
+    family: 'video',
+    homepage: 'https://academy.zenva.com/',
+    queryTemplate: 'https://academy.zenva.com/search/?s={query}',
+    icon: 'Z',
+    privacyNote: 'Search terms are sent to Zenva Academy.',
+    enabledByDefault: true,
+  },
+  {
+    id: 'gamedev',
+    label: 'GameDev.tv',
+    family: 'video',
+    homepage: 'https://www.gamedev.tv/',
+    queryTemplate: 'https://www.gamedev.tv/courses/?query={query}',
+    icon: 'G',
+    privacyNote: 'Search terms are sent to GameDev.tv.',
     enabledByDefault: true,
   },
   {
@@ -119,6 +194,26 @@ export const searchProviders: SearchProvider[] = [
     privacyNote: 'Search terms are sent to SoundCloud.',
     enabledByDefault: true,
   },
+  {
+    id: 'pixabay',
+    label: 'Pixabay Music',
+    family: 'music',
+    homepage: 'https://pixabay.com/music/',
+    queryTemplate: 'https://pixabay.com/music/search/{query}/',
+    icon: 'P',
+    privacyNote: 'Search terms are sent to Pixabay.',
+    enabledByDefault: true,
+  },
+  {
+    id: 'chosic',
+    label: 'Chosic',
+    family: 'music',
+    homepage: 'https://www.chosic.com/free-music/all/',
+    queryTemplate: 'https://www.chosic.com/free-music/all/?keyword={query}',
+    icon: 'C',
+    privacyNote: 'Search terms are sent to Chosic.',
+    enabledByDefault: true,
+  },
 ];
 
 export const searchFamilies: Array<{ id: SearchFamily; label: string }> = [
@@ -135,11 +230,29 @@ export function providerById(id: string): SearchProvider {
   );
 }
 
+export function providersFor(family: SearchFamily): SearchProvider[] {
+  return searchProviders.filter((provider) => provider.family === family);
+}
+
+export function resolveFamilyDefault(
+  search: { defaults: Record<SearchFamily, string> },
+  family: SearchFamily,
+): SearchProvider {
+  const candidate = searchProviders.find(
+    (provider) =>
+      provider.id === search.defaults[family] && provider.family === family,
+  );
+  return candidate ?? providersFor(family)[0]!;
+}
+
 export function buildProviderUrl(
   provider: SearchProvider,
   rawQuery: string,
 ): string {
   const query = rawQuery.trim();
   if (!query || !provider.queryTemplate) return provider.homepage;
-  return provider.queryTemplate.replace('{query}', encodeURIComponent(query));
+  return provider.queryTemplate.replaceAll(
+    '{query}',
+    encodeURIComponent(query),
+  );
 }
