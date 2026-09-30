@@ -1,4 +1,6 @@
 @import './tokens.css';
+@import './news.css';
+@import './audio.css';
 
 /* Base rules mirror tihomir-selak-2026/src/styles/system/base.css. */
 *,
@@ -1338,6 +1340,78 @@ kbd {
 
 .form-actions {
   justify-content: flex-end;
+}
+
+/* ---- Focus mode, word of the day, header extras ------------------------------ */
+:root[data-focus='on'] .focus-hide {
+  display: none;
+}
+
+.icon-btn[aria-pressed='true'] {
+  color: var(--c-phosphor);
+  border-color: var(--c-phosphor);
+}
+
+.icon-btn {
+  position: relative;
+}
+
+.playing-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  background: var(--c-phosphor);
+  border-radius: 50%;
+}
+
+.word-of-day {
+  color: var(--c-graphite);
+}
+
+.word-of-day summary {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: var(--space-3);
+  cursor: pointer;
+}
+
+.word-of-day__kicker {
+  color: var(--c-graphite);
+}
+
+.word-of-day__word {
+  color: var(--c-paper-bright);
+  font-weight: 500;
+}
+
+.word-of-day p {
+  max-width: 62ch;
+  padding-bottom: var(--space-2);
+  color: var(--c-paper);
+  font-size: var(--step--1);
+  line-height: 1.55;
+}
+
+.keyboard-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.keyboard-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--c-paper);
+  font-size: var(--step--1);
+}
+
+.keyboard-list dd {
+  margin: 0;
 }
 
 /* ---- Small screens ----------------------------------------------------------- */

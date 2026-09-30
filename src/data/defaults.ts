@@ -92,10 +92,19 @@ export const defaultShortcuts: Shortcut[] = entries.map(
 );
 
 export const createDefaultConfig = (): StartPageConfig => ({
-  version: 2,
+  version: 3,
   shortcuts: defaultShortcuts.map((shortcut) => ({ ...shortcut })),
   groups: defaultGroups.map((group) => ({ ...group })),
-  search: { defaultProvider: 'google', recentProviders: [] },
+  search: {
+    family: 'web',
+    defaults: {
+      web: 'google',
+      ai: 'perplexity',
+      video: 'youtube',
+      music: 'soundcloud',
+    },
+    recentProviders: [],
+  },
   weather: {
     locations: [
       {
@@ -110,8 +119,13 @@ export const createDefaultConfig = (): StartPageConfig => ({
     activeLocationId: 'osijek',
     units: 'metric',
   },
-  appearance: { background: { kind: 'field', photo: defaultPhotoId } },
+  appearance: {
+    background: { kind: 'field', photo: defaultPhotoId },
+    focus: false,
+  },
   quote: { enabled: true },
-  audio: { enabled: false, volume: 0.55 },
+  word: { enabled: true },
+  news: { enabled: true, source: 'bug', expanded: false, presets: [] },
+  audio: { mix: {}, low: true, playlist: [], muted: [], playlistVolume: 0.5 },
   updatedAt: new Date(0).toISOString(),
 });

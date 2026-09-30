@@ -47,8 +47,22 @@ export function mergeConfigs(
     ? incoming.weather.activeLocationId
     : current.weather.activeLocationId;
 
+  const playlist = new Map(
+    current.audio.playlist.map((song) => [song.id, song]),
+  );
+  for (const song of incoming.audio.playlist) playlist.set(song.id, song);
+  const presets = new Map(
+    current.news.presets.map((preset) => [preset.id, preset]),
+  );
+  for (const preset of incoming.news.presets) presets.set(preset.id, preset);
+
   return parseConfig({
     ...incoming,
+    audio: {
+      ...incoming.audio,
+      playlist: [...playlist.values()].slice(0, 100),
+    },
+    news: { ...incoming.news, presets: [...presets.values()].slice(0, 12) },
     shortcuts: [...shortcuts.values()].sort((a, b) => a.order - b.order),
     groups: [...groups.values()].sort((a, b) => a.order - b.order),
     weather: {

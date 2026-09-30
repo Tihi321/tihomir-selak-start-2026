@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { trackIds } from '@/data/audio';
+import { searchFamilyIds } from '@/data/providers';
 
 const safeUrl = z
   .string()
@@ -31,10 +33,27 @@ const httpsImageUrl = z
     }
   }, 'Use a complete HTTPS image link.');
 
+const httpsUrl = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2048)
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' && !url.username && !url.password;
+    } catch {
+      return false;
+    }
+  }, 'Use a complete HTTPS link.');
+
+export const newsSources = ['bug', 'verge', 'techcrunch'] as const;
+export type NewsSource = (typeof newsSources)[number];
+
 export const backgroundKinds = ['field', 'photo', 'custom', 'plain'] as const;
 export type BackgroundKind = (typeof backgroundKinds)[number];
 
-export const CURRENT_CONFIG_VERSION = 2;
+export const CURRENT_CONFIG_VERSION = 3;
 
 export const shortcutSchema = z.object({
   id: z.string().trim().min(1).max(80),
@@ -63,15 +82,53 @@ export const weatherLocationSchema = z.object({
   order: z.number().int().min(0).max(100),
 });
 
+export const newsPresetSchema = z.object({
+  id: z.string().trim().min(1).max(40),
+  name: z.string().trim().min(1).max(32),
+  query: z.string().trim().min(1).max(80),
+});
+
+export const playlistSongSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  name: z.string().trim().min(1).max(80),
+  url: httpsUrl,
+});
+
+const searchFamilySchema = z.enum(searchFamilyIds);
+const providerIdSchema = z.string().trim().min(1).max(40);
+
+const searchSchema = z.object({
+  family: searchFamilySchema,
+  defaults: z.object({
+    web: providerIdSchema,
+    ai: providerIdSchema,
+    video: providerIdSchema,
+    music: providerIdSchema,
+  }),
+  recentProviders: z.array(providerIdSchema).max(4),
+});
+
+const newsSchema = z.object({
+  enabled: z.boolean(),
+  source: z.enum(newsSources),
+  expanded: z.boolean(),
+  presets: z.array(newsPresetSchema).max(12),
+});
+
+const audioSchema = z.object({
+  mix: z.partialRecord(z.enum(trackIds), z.number().min(0).max(10)),
+  low: z.boolean(),
+  playlist: z.array(playlistSongSchema).max(100),
+  muted: z.array(z.string().trim().min(1).max(80)).max(100),
+  playlistVolume: z.number().min(0).max(1),
+});
+
 export const startPageConfigSchema = z
   .object({
-    version: z.literal(2),
+    version: z.literal(3),
     shortcuts: z.array(shortcutSchema).max(300),
     groups: z.array(shortcutGroupSchema).max(40),
-    search: z.object({
-      defaultProvider: z.string().trim().min(1).max(40),
-      recentProviders: z.array(z.string().trim().min(1).max(40)).max(4),
-    }),
+    search: searchSchema,
     weather: z.object({
       locations: z.array(weatherLocationSchema).min(1).max(20),
       activeLocationId: z.string().trim().min(1).max(80),
@@ -83,9 +140,12 @@ export const startPageConfigSchema = z
         photo: z.string().trim().min(1).max(40),
         customUrl: httpsImageUrl.optional(),
       }),
+      focus: z.boolean(),
     }),
     quote: z.object({ enabled: z.boolean() }),
-    audio: z.object({ enabled: z.boolean(), volume: z.number().min(0).max(1) }),
+    word: z.object({ enabled: z.boolean() }),
+    news: newsSchema,
+    audio: audioSchema,
     updatedAt: z.iso.datetime({ offset: true }),
   })
   .superRefine((config, context) => {
@@ -128,6 +188,11 @@ export const startPageConfigSchema = z
 export type Shortcut = z.infer<typeof shortcutSchema>;
 export type ShortcutGroup = z.infer<typeof shortcutGroupSchema>;
 export type WeatherLocation = z.infer<typeof weatherLocationSchema>;
+export type NewsPreset = z.infer<typeof newsPresetSchema>;
+export type PlaylistSong = z.infer<typeof playlistSongSchema>;
+export type SearchConfig = z.infer<typeof searchSchema>;
+export type NewsConfig = z.infer<typeof newsSchema>;
+export type AudioConfig = z.infer<typeof audioSchema>;
 export type StartPageConfig = z.infer<typeof startPageConfigSchema>;
 export type Background = StartPageConfig['appearance']['background'];
 
