@@ -39,6 +39,7 @@ The project is a static Astro site intended for Netlify previews. Production hos
 - Background photos in `public/backgrounds/` are reused from the owner's earlier astro-start-tab project.
 - The quote above the search box comes from the personal CDN (`cdn.tihomir-selak.from.hr`): the daily quote, and "Next" draws from the cached quote list. When the CDN is unreachable it falls back to cached data and then to the original local reflections.
 - Slack (`https://app.slack.com/client/T03TQ1AE0/C01R9LA2UTW`) is a committed default favorite. Stored version 1 settings are upgraded to version 2 on load, which also updates the default Facebook Messages link and adds Slack if it is missing.
+- Favorites can be removed with the × on a tile and reordered by dragging, or with `Alt+Arrow` keys on a focused tile. The order is stored per favorite (`favoriteOrder`) and does not change the group order in All shortcuts.
 
 ## News, word of the day and focus mode
 

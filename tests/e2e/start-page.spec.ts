@@ -822,3 +822,62 @@ test('the default dashboard including the news list fits a 1440x1200 viewport', 
   expect(lastBox).not.toBeNull();
   expect(lastBox!.y + lastBox!.height).toBeLessThanOrEqual(layout.innerHeight);
 });
+
+test('favorites can be removed, reordered by drag and keyboard, and re-added', async ({
+  page,
+}) => {
+  await page.goto('/');
+  const shelf = page.getByRole('navigation', { name: 'Favorite shortcuts' });
+  const links = shelf.getByRole('link');
+  await expect(links).toHaveCount(13);
+
+  const rows = page.locator('.catalogue-row');
+  await page.getByRole('button', { name: 'All shortcuts' }).click();
+  const catalogueBefore = await rows.locator('> a').allInnerTexts();
+  await page.getByRole('button', { name: 'Show favorites' }).click();
+
+  // Remove
+  await shelf.locator('.favorite-item', { hasText: 'Slack' }).hover();
+  await page
+    .getByRole('button', { name: 'Remove Slack from favorites' })
+    .click();
+  await expect(links).toHaveCount(12);
+  await expect(shelf.getByRole('link', { name: 'Slack' })).toHaveCount(0);
+  await page.reload();
+  await expect(links).toHaveCount(12);
+  await expect(shelf.getByRole('link', { name: 'Slack' })).toHaveCount(0);
+
+  // Drag first onto third
+  const before = await links.allInnerTexts();
+  await shelf
+    .locator('.favorite-item')
+    .first()
+    .dragTo(shelf.locator('.favorite-item').nth(2), {
+      targetPosition: { x: 150, y: 20 },
+    });
+  const afterDrag = await links.allInnerTexts();
+  expect(afterDrag).not.toEqual(before);
+  expect(afterDrag[2]).toBe(before[0]);
+  await page.reload();
+  await expect(links).toHaveCount(12);
+  expect(await links.allInnerTexts()).toEqual(afterDrag);
+
+  // Keyboard
+  await links.first().focus();
+  await page.keyboard.press('Alt+ArrowRight');
+  await expect(links.nth(1)).toBeFocused();
+  expect((await links.allInnerTexts())[1]).toBe(afterDrag[0]);
+
+  // Catalogue order is unaffected by reordering favorites
+  await page.getByRole('button', { name: 'All shortcuts' }).click();
+  const catalogueAfter = await rows.locator('> a').allInnerTexts();
+  expect(catalogueAfter).toEqual(catalogueBefore);
+
+  // Re-favorite from the catalogue appends at the end
+  const slackRow = rows.filter({ hasText: 'Slack' }).first();
+  await slackRow.getByRole('button', { name: /More options/ }).click();
+  await page.getByRole('button', { name: 'Add to favorites' }).click();
+  await page.getByRole('button', { name: 'Show favorites' }).click();
+  await expect(links).toHaveCount(13);
+  await expect(links.last()).toHaveText(/Slack/);
+});

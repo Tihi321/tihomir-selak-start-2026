@@ -161,8 +161,25 @@ export default function StartDashboard() {
       .sort((a, b) => a.order - b.order),
   );
   const favorites = createMemo(() =>
-    active().filter((shortcut) => shortcut.favorite),
+    active()
+      .filter((shortcut) => shortcut.favorite)
+      .sort(
+        (a, b) =>
+          (a.favoriteOrder ?? a.order) - (b.favoriteOrder ?? b.order) ||
+          a.order - b.order,
+      ),
   );
+  const [dragId, setDragId] = createSignal<string | null>(null);
+  const [previewIds, setPreviewIds] = createSignal<string[]>([]);
+  const displayFavorites = createMemo(() => {
+    const visible = favorites().slice(0, 16);
+    if (!dragId()) return visible;
+    const byId = new Map(visible.map((item) => [item.id, item]));
+    const ordered = previewIds()
+      .map((id) => byId.get(id))
+      .filter((item): item is Shortcut => Boolean(item));
+    return ordered.length === visible.length ? ordered : visible;
+  });
   const groups = createMemo(() => {
     const needle = filter().trim().toLowerCase();
     return [...config().groups]
@@ -609,6 +626,11 @@ export default function StartDashboard() {
           Math.max(0, ...config().shortcuts.map((item) => item.order)) + 1,
         hidden: false,
         favorite: value.favorite,
+        favoriteOrder: value.favorite
+          ? old?.favorite
+            ? old.favoriteOrder
+            : nextFavoriteOrder()
+          : undefined,
         source: old?.source ?? 'user',
       };
       const shortcuts = old
@@ -664,13 +686,27 @@ export default function StartDashboard() {
       item.hidden ? `${item.label} restored.` : `${item.label} hidden.`,
     );
   }
+  function nextFavoriteOrder() {
+    const current = favorites();
+    if (!current.length) return 0;
+    return Math.min(
+      10_000,
+      Math.max(...current.map((value) => value.favoriteOrder ?? value.order)) +
+        1,
+    );
+  }
   function toggleFavorite(item: Shortcut) {
+    const order = nextFavoriteOrder();
     persist(
       {
         ...config(),
         shortcuts: config().shortcuts.map((value) =>
           value.id === item.id
-            ? { ...value, favorite: !value.favorite }
+            ? {
+                ...value,
+                favorite: !value.favorite,
+                favoriteOrder: value.favorite ? undefined : order,
+              }
             : value,
         ),
       },
@@ -678,6 +714,93 @@ export default function StartDashboard() {
         ? `${item.label} removed from favorites.`
         : `${item.label} added to favorites.`,
     );
+  }
+  function reorderFavorites(ids: string[]) {
+    const positions = new Map(ids.map((id, index) => [id, index]));
+    persist(
+      {
+        ...config(),
+        shortcuts: config().shortcuts.map((value) =>
+          positions.has(value.id)
+            ? { ...value, favoriteOrder: positions.get(value.id) }
+            : value,
+        ),
+      },
+      'Favorites reordered.',
+    );
+  }
+  function moveFavorite(id: string, offset: number) {
+    const ids = favorites().map((value) => value.id);
+    const from = ids.indexOf(id);
+    const to = from + offset;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    ids.splice(to, 0, ...ids.splice(from, 1));
+    reorderFavorites(ids);
+  }
+  function favoriteKeyDown(event: KeyboardEvent, id: string) {
+    if (!event.altKey || event.ctrlKey || event.metaKey) return;
+    const offset =
+      event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+        ? -1
+        : event.key === 'ArrowRight' || event.key === 'ArrowDown'
+          ? 1
+          : 0;
+    if (!offset) return;
+    event.preventDefault();
+    moveFavorite(id, offset);
+    requestAnimationFrame(() =>
+      document
+        .querySelector<HTMLElement>(
+          `[data-favorite-id="${CSS.escape(id)}"] .favorite-link`,
+        )
+        ?.focus(),
+    );
+  }
+  function startDrag(event: DragEvent, id: string) {
+    if (!event.dataTransfer) return;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', id);
+    setDragId(id);
+    setPreviewIds(
+      favorites()
+        .slice(0, 16)
+        .map((value) => value.id),
+    );
+  }
+  function dragOverItem(event: DragEvent, targetId: string) {
+    const dragging = dragId();
+    if (!dragging) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    if (dragging === targetId) return;
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const after = event.clientX > rect.left + rect.width / 2;
+    const ids = previewIds().filter((id) => id !== dragging);
+    const index = ids.indexOf(targetId);
+    if (index < 0) return;
+    ids.splice(after ? index + 1 : index, 0, dragging);
+    const current = previewIds();
+    if (ids.every((id, position) => id === current[position])) return;
+    setPreviewIds(ids);
+  }
+  function dropFavorite(event: DragEvent) {
+    if (!dragId()) return;
+    event.preventDefault();
+    const ids = previewIds();
+    const visible = favorites()
+      .slice(0, 16)
+      .map((value) => value.id);
+    if (ids.some((id, position) => id !== visible[position])) {
+      const rest = favorites()
+        .slice(16)
+        .map((value) => value.id);
+      reorderFavorites([...ids, ...rest]);
+    }
+    endDrag();
+  }
+  function endDrag() {
+    setDragId(null);
+    setPreviewIds([]);
   }
   function remove(item: Shortcut) {
     setUndoTarget(item);
@@ -710,6 +833,7 @@ export default function StartDashboard() {
       label: `${item.label} copy`,
       order: Math.max(0, ...config().shortcuts.map((value) => value.order)) + 1,
       favorite: false,
+      favoriteOrder: undefined,
       source: 'user',
     };
     persist(
@@ -1371,21 +1495,65 @@ export default function StartDashboard() {
                   </div>
                 }
               >
-                <nav class="favorite-shelf" aria-label="Favorite shortcuts">
-                  <For each={favorites().slice(0, 16)}>
+                <nav
+                  class="favorite-shelf"
+                  aria-label="Favorite shortcuts"
+                  onDragOver={(event) => {
+                    if (!dragId()) return;
+                    event.preventDefault();
+                    if (event.dataTransfer)
+                      event.dataTransfer.dropEffect = 'move';
+                  }}
+                  onDrop={dropFavorite}
+                >
+                  <For each={displayFavorites()}>
                     {(item) => (
-                      <a
-                        class="favorite-link"
-                        href={item.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title={item.label}
+                      <div
+                        class="favorite-item"
+                        data-favorite-id={item.id}
+                        classList={{ 'is-dragging': dragId() === item.id }}
+                        draggable="true"
+                        onDragStart={(event) => startDrag(event, item.id)}
+                        onDragOver={(event) => dragOverItem(event, item.id)}
+                        onDragEnd={endDrag}
                       >
-                        <span class="favorite-glyph" aria-hidden="true">
-                          {item.icon || item.label.slice(0, 1).toUpperCase()}
-                        </span>
-                        <span>{item.label}</span>
-                      </a>
+                        <a
+                          class="favorite-link"
+                          href={item.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={item.label}
+                          draggable="false"
+                          onKeyDown={(event) => favoriteKeyDown(event, item.id)}
+                        >
+                          <span class="favorite-glyph" aria-hidden="true">
+                            {item.icon || item.label.slice(0, 1).toUpperCase()}
+                          </span>
+                          <span>{item.label}</span>
+                        </a>
+                        <button
+                          class="favorite-remove"
+                          type="button"
+                          aria-label={`Remove ${item.label} from favorites`}
+                          title="Remove from favorites"
+                          onClick={() => toggleFavorite(item)}
+                        >
+                          <svg
+                            viewBox="0 0 10 10"
+                            width="8"
+                            height="8"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M1.5 1.5l7 7M8.5 1.5l-7 7"
+                              fill="none"
+                              stroke="currentColor"
+                              stroke-width="1.6"
+                              stroke-linecap="round"
+                            />
+                          </svg>
+                        </button>
+                      </div>
                     )}
                   </For>
                   <Show when={!favorites().length}>

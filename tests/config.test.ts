@@ -629,3 +629,36 @@ describe('background photos', () => {
     expect(randomPhotoId('bg001', () => 0.999999)).not.toBe('bg001');
   });
 });
+
+describe('favoriteOrder', () => {
+  it('parses configs with and without favoriteOrder and round-trips it', () => {
+    const config = createDefaultConfig();
+    expect(() => parseConfig(config)).not.toThrow();
+    const ordered = {
+      ...config,
+      shortcuts: config.shortcuts.map((item, index) =>
+        item.favorite ? { ...item, favoriteOrder: 100 - index } : item,
+      ),
+    };
+    const parsed = parseConfig(ordered);
+    const first = parsed.shortcuts.find(({ favorite }) => favorite)!;
+    expect(first.favoriteOrder).toBeTypeOf('number');
+    const exported = parseConfig(JSON.parse(exportConfig(parsed)));
+    expect(
+      exported.shortcuts.map(({ favoriteOrder }) => favoriteOrder),
+    ).toEqual(parsed.shortcuts.map(({ favoriteOrder }) => favoriteOrder));
+    const merged = mergeConfigs(createDefaultConfig(), parsed);
+    expect(
+      merged.shortcuts.find(({ id }) => id === first.id)!.favoriteOrder,
+    ).toBe(first.favoriteOrder);
+  });
+
+  it('rejects an out-of-range favoriteOrder', () => {
+    const config = createDefaultConfig();
+    const bad = {
+      ...config,
+      shortcuts: [{ ...config.shortcuts[0]!, favoriteOrder: -1 }],
+    };
+    expect(() => parseConfig(bad)).toThrow();
+  });
+});
