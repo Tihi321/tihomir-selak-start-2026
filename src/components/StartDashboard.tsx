@@ -1220,11 +1220,11 @@ export default function StartDashboard() {
                   )}
                 </For>
               </div>
+              <p class="privacy-note mono">{provider().privacyNote}</p>
               <span class="shortcut-hint mono">
                 <kbd>/</kbd> to focus
               </span>
             </div>
-            <p class="privacy-note mono">{provider().privacyNote}</p>
             <Show when={config().word.enabled && word()}>
               {(item) => (
                 <details class="word-of-day">
@@ -1242,23 +1242,23 @@ export default function StartDashboard() {
             class="tile-section focus-hide grid-12"
             aria-labelledby="favorites-heading"
           >
-            <h2 class="tile-section__label" id="favorites-heading">
-              <svg
-                class="tile-section__glyph"
-                viewBox="0 0 16 16"
-                width="14"
-                height="14"
-                aria-hidden="true"
-              >
-                <path
-                  d="M7 9 4.2 6.4 1.8 6.6M4.2 6.4 3.6 3.2M7 9 8 4.6 10.4 3M8 4.6 7 1.6M7 9 3.8 11.4 2 14.2M3.8 11.4 1.4 11M7 9 8.6 13.2 7.6 15.2M9 9.2 15 8.2"
-                  fill="none"
-                />
-                <circle cx="7" cy="9" r="2.1" />
-              </svg>
-              Shortcuts
-            </h2>
-            <div class="tile-section__body">
+            <div class="tile-section__head">
+              <h2 class="tile-section__label" id="favorites-heading">
+                <svg
+                  class="tile-section__glyph"
+                  viewBox="0 0 16 16"
+                  width="14"
+                  height="14"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M7 9 4.2 6.4 1.8 6.6M4.2 6.4 3.6 3.2M7 9 8 4.6 10.4 3M8 4.6 7 1.6M7 9 3.8 11.4 2 14.2M3.8 11.4 1.4 11M7 9 8.6 13.2 7.6 15.2M9 9.2 15 8.2"
+                    fill="none"
+                  />
+                  <circle cx="7" cy="9" r="2.1" />
+                </svg>
+                Shortcuts
+              </h2>
               <div class="section-actions">
                 <button
                   class="quiet-button"
@@ -1275,6 +1275,8 @@ export default function StartDashboard() {
                   Add
                 </button>
               </div>
+            </div>
+            <div class="tile-section__body">
               <Show
                 when={!showAll()}
                 fallback={

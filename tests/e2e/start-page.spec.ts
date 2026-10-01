@@ -802,3 +802,23 @@ test('the settings keyboard block lists the shortcuts', async ({ page }) => {
   await expect(block).toContainText('Stop all sound');
   await expect(block.locator('kbd')).toHaveCount(21);
 });
+
+test('the default dashboard including the news list fits a 1440x1200 viewport', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await page.goto('/');
+  const items = page.locator('.news-item');
+  await expect(items.first()).toBeVisible();
+  await expect(items).toHaveCount(6);
+
+  const layout = await page.evaluate(() => ({
+    scrollHeight: document.documentElement.scrollHeight,
+    innerHeight: window.innerHeight,
+  }));
+  expect(layout.scrollHeight).toBeLessThanOrEqual(layout.innerHeight);
+
+  const lastBox = await items.last().boundingBox();
+  expect(lastBox).not.toBeNull();
+  expect(lastBox!.y + lastBox!.height).toBeLessThanOrEqual(layout.innerHeight);
+});

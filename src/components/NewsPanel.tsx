@@ -137,22 +137,42 @@ export default function NewsPanel(props: Props) {
       class="news-panel tile-section focus-hide grid-12"
       aria-labelledby="news-heading"
     >
-      <h2 class="tile-section__label" id="news-heading">
-        <svg
-          class="tile-section__glyph"
-          viewBox="0 0 16 16"
-          width="14"
-          height="14"
-          aria-hidden="true"
-        >
-          <path
-            d="M2 3.5h9v9H3.5A1.5 1.5 0 0 1 2 11zM11 6h3v5.5a1 1 0 0 1-1 1M4.5 6h4M4.5 8.5h4"
-            fill="none"
-          />
-          <circle cx="4.7" cy="10.6" r="0.9" />
-        </svg>
-        News
-      </h2>
+      <div class="tile-section__head">
+        <h2 class="tile-section__label" id="news-heading">
+          <svg
+            class="tile-section__glyph"
+            viewBox="0 0 16 16"
+            width="14"
+            height="14"
+            aria-hidden="true"
+          >
+            <path
+              d="M2 3.5h9v9H3.5A1.5 1.5 0 0 1 2 11zM11 6h3v5.5a1 1 0 0 1-1 1M4.5 6h4M4.5 8.5h4"
+              fill="none"
+            />
+            <circle cx="4.7" cy="10.6" r="0.9" />
+          </svg>
+          News
+        </h2>
+        <div class="section-actions">
+          <button
+            class="quiet-button"
+            type="button"
+            aria-pressed={props.config.expanded}
+            onClick={toggleExpanded}
+          >
+            {props.config.expanded ? 'Compact view' : 'Expanded view'}
+          </button>
+          <a
+            class="quiet-button"
+            href={feed().homepage}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {feed().label} site
+          </a>
+        </div>
+      </div>
       <div class="tile-section__body">
         <div class="news-bar">
           <div class="family-switcher" role="group" aria-label="News source">
@@ -169,103 +189,85 @@ export default function NewsPanel(props: Props) {
               )}
             </For>
           </div>
-          <div class="section-actions">
-            <button
-              class="quiet-button"
-              type="button"
-              aria-pressed={props.config.expanded}
-              onClick={toggleExpanded}
-            >
-              {props.config.expanded ? 'Compact view' : 'Expanded view'}
-            </button>
-            <a
-              class="quiet-button"
-              href={feed().homepage}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {feed().label} site
-            </a>
-          </div>
-        </div>
 
-        <div class="news-tools">
-          <label class="sr-only" for="news-filter">
-            Filter news
-          </label>
-          <input
-            id="news-filter"
-            class="filter-input"
-            type="search"
-            maxLength={QUERY_LIMIT}
-            placeholder="Filter headlines"
-            value={filter()}
-            onInput={(event) => {
-              setFilter(event.currentTarget.value);
-              setShowAll(false);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape' && filter()) {
-                event.preventDefault();
-                event.stopPropagation();
-                setFilter('');
-              }
-            }}
-          />
-          <Show
-            when={naming()}
-            fallback={
-              <button
-                class="quiet-button"
-                type="button"
-                disabled={!canSave()}
-                title={
-                  props.config.presets.length >= MAX_PRESETS
-                    ? 'Remove a saved filter first'
-                    : undefined
+          <div class="news-tools">
+            <label class="sr-only" for="news-filter">
+              Filter news
+            </label>
+            <input
+              id="news-filter"
+              class="filter-input"
+              type="search"
+              maxLength={QUERY_LIMIT}
+              placeholder="Filter headlines"
+              value={filter()}
+              onInput={(event) => {
+                setFilter(event.currentTarget.value);
+                setShowAll(false);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape' && filter()) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setFilter('');
                 }
-                onClick={() => setNaming(true)}
-              >
-                Save filter
-              </button>
-            }
-          >
-            <form class="news-name-form" onSubmit={savePreset}>
-              <label class="sr-only" for="news-preset-name">
-                Filter name
-              </label>
-              <input
-                id="news-preset-name"
-                type="text"
-                maxLength={NAME_LIMIT}
-                placeholder="Name this filter"
-                value={presetName()}
-                ref={(element) => queueMicrotask(() => element.focus())}
-                onInput={(event) => setPresetName(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Escape') {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setNaming(false);
+              }}
+            />
+            <Show
+              when={naming()}
+              fallback={
+                <button
+                  class="quiet-button"
+                  type="button"
+                  disabled={!canSave()}
+                  title={
+                    props.config.presets.length >= MAX_PRESETS
+                      ? 'Remove a saved filter first'
+                      : undefined
                   }
-                }}
-              />
-              <button
-                class="secondary-button"
-                type="submit"
-                disabled={!presetName().trim() || !canSave()}
-              >
-                Save
-              </button>
-              <button
-                class="quiet-button"
-                type="button"
-                onClick={() => setNaming(false)}
-              >
-                Cancel
-              </button>
-            </form>
-          </Show>
+                  onClick={() => setNaming(true)}
+                >
+                  Save filter
+                </button>
+              }
+            >
+              <form class="news-name-form" onSubmit={savePreset}>
+                <label class="sr-only" for="news-preset-name">
+                  Filter name
+                </label>
+                <input
+                  id="news-preset-name"
+                  type="text"
+                  maxLength={NAME_LIMIT}
+                  placeholder="Name this filter"
+                  value={presetName()}
+                  ref={(element) => queueMicrotask(() => element.focus())}
+                  onInput={(event) => setPresetName(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setNaming(false);
+                    }
+                  }}
+                />
+                <button
+                  class="secondary-button"
+                  type="submit"
+                  disabled={!presetName().trim() || !canSave()}
+                >
+                  Save
+                </button>
+                <button
+                  class="quiet-button"
+                  type="button"
+                  onClick={() => setNaming(false)}
+                >
+                  Cancel
+                </button>
+              </form>
+            </Show>
+          </div>
         </div>
 
         <Show when={props.config.presets.length}>
