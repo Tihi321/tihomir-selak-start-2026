@@ -452,6 +452,8 @@ input::placeholder {
 /* ---- Buttons ------------------------------------------------------------ */
 .quiet-button,
 .link-button {
+  display: inline-flex;
+  align-items: center;
   min-height: 32px;
   padding: 0 var(--space-2);
   color: var(--c-graphite);
@@ -540,20 +542,20 @@ input::placeholder {
 .search-stage {
   display: grid;
   max-width: 760px;
-  margin: var(--space-8) auto var(--space-7);
+  margin: var(--space-6) auto var(--space-6);
   gap: var(--space-4);
 }
 
 .hero-quote {
   display: grid;
-  min-height: 9.5rem;
   align-content: end;
   gap: var(--space-3);
-  margin-bottom: var(--space-3);
 }
 
 .hero-quote blockquote {
   max-width: 34ch;
+  display: flex;
+  align-items: flex-end;
   min-height: calc(var(--lh-2) * 2 * 1em);
   color: var(--c-paper-bright);
   font-size: var(--step-2);
@@ -585,10 +587,6 @@ input::placeholder {
     );
     margin-right: 0;
     max-width: 760px;
-  }
-
-  .hero-quote {
-    min-height: 11rem;
   }
 
   .hero-quote blockquote {
@@ -721,18 +719,30 @@ kbd {
 
 .privacy-note {
   max-width: 62ch;
+  margin: 0 0 0 auto;
 }
 
 /* ---- Shortcuts section (main site Section.astro look) -------------------- */
 .tile-section {
-  padding-block: var(--space-7);
+  padding-block: var(--space-6);
   border-top: var(--border-hair);
-  row-gap: var(--space-5);
+  row-gap: var(--space-4);
+}
+
+/* Heading + that section's actions. One row on small screens, a stacked
+   column in grid cols 1-2 on desktop. */
+.tile-section__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+  grid-column: 1 / -1;
+  min-width: 0;
 }
 
 .tile-section__label {
   max-width: none;
-  grid-column: 1 / -1;
   font-size: var(--step-1);
   line-height: var(--lh-1);
   letter-spacing: -0.015em;
@@ -758,15 +768,27 @@ kbd {
 
 .tile-section__body {
   display: grid;
-  gap: var(--space-5);
+  gap: var(--space-4);
   grid-column: 1 / -1;
   min-width: 0;
   align-content: start;
 }
 
 @media (min-width: 1024px) {
-  .tile-section__label {
+  .tile-section__head {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
     grid-column: 1 / span 2;
+  }
+
+  .tile-section__head .section-actions {
+    justify-content: flex-start;
+    gap: 0 var(--space-4);
+  }
+
+  .tile-section__head .quiet-button {
+    padding-inline: 0;
   }
 
   .tile-section__body {
@@ -785,19 +807,18 @@ kbd {
 
 .section-actions {
   justify-content: flex-end;
-  margin-top: calc(-1 * var(--space-2));
 }
 
 .favorite-shelf {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .favorite-link {
   display: flex;
   min-width: 0;
-  min-height: 52px;
+  min-height: 48px;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
@@ -1416,12 +1437,17 @@ kbd {
 
 /* ---- Small screens ----------------------------------------------------------- */
 @media (max-width: 719.98px) {
-  .search-stage {
-    margin: var(--space-6) auto var(--space-6);
+  .shortcut-hint {
+    display: none;
   }
 
-  .hero-quote {
-    min-height: 8.5rem;
+  .privacy-note {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+
+  .search-stage {
+    margin: var(--space-5) auto var(--space-5);
   }
 
   .search-rail .provider-select {
@@ -1437,7 +1463,7 @@ kbd {
   }
 
   .tile-section {
-    padding-block: var(--space-6);
+    padding-block: var(--space-5);
   }
 
   .favorite-shelf {
