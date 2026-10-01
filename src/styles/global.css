@@ -815,6 +815,62 @@ kbd {
   gap: var(--space-2);
 }
 
+.favorite-item {
+  position: relative;
+  min-width: 0;
+  cursor: grab;
+}
+
+.favorite-item.is-dragging {
+  opacity: 0.45;
+}
+
+.favorite-item .favorite-link {
+  height: 100%;
+}
+
+.favorite-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  place-items: center;
+  color: var(--c-graphite);
+  background: var(--c-slate);
+  border: var(--border-hair);
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.favorite-item:hover .favorite-remove,
+.favorite-item:focus-within .favorite-remove,
+.favorite-remove:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.favorite-remove:hover,
+.favorite-remove:focus-visible {
+  color: var(--c-paper-bright);
+  border-color: var(--c-phosphor);
+}
+
+@media (hover: none) {
+  .favorite-remove {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .favorite-link {
   display: flex;
   min-width: 0;

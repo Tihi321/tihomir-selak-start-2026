@@ -64,6 +64,7 @@ export const shortcutSchema = z.object({
   order: z.number().int().min(0).max(10_000),
   hidden: z.boolean().default(false),
   favorite: z.boolean().default(false),
+  favoriteOrder: z.number().int().min(0).max(10_000).optional(),
   source: z.enum(['default', 'user', 'migrated']),
 });
 
