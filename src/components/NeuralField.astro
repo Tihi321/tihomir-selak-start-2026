@@ -1,4 +1,5 @@
-<!-- Mirrors tihomir-selak-2026/src/components/system/NeuralField.astro, keep in sync. -->
+<!-- Mirrors tihomir-selak-2026/src/components/system/NeuralField.astro, keep in sync. --><!-- Static nebula haze (dark only), painted once instead of every frame. -->
+<div class="neural-field neural-field__haze" aria-hidden="true"></div>
 <canvas class="neural-field" aria-hidden="true"></canvas>
 <!-- Probes exist only so the script can read resolved light-dark() colors. -->
 <span class="neural-field__probe" aria-hidden="true">
@@ -16,6 +17,37 @@
     z-index: 0;
     pointer-events: none;
     display: block;
+  }
+
+  /* Glow sprite profile (1 -> 0.35 at 35% -> 0) at 15% opacity. */
+  .neural-field__haze {
+    --haze: light-dark(
+      transparent,
+      color-mix(in srgb, var(--c-synapse) 15%, transparent)
+    );
+    --haze-mid: light-dark(
+      transparent,
+      color-mix(in srgb, var(--c-synapse) 5%, transparent)
+    );
+    background:
+      radial-gradient(
+        55vmax circle at 92% 5%,
+        var(--haze),
+        var(--haze-mid) 35%,
+        transparent
+      ),
+      radial-gradient(
+        50vmax circle at 4% 95%,
+        var(--haze),
+        var(--haze-mid) 35%,
+        transparent
+      ),
+      radial-gradient(
+        38vmax circle at 85% 95%,
+        var(--haze),
+        var(--haze-mid) 35%,
+        transparent
+      );
   }
 
   .neural-field__probe {
@@ -43,7 +75,9 @@
 <script>
   import { startNeuralField } from '../scripts/neural-field';
 
-  const canvas = document.querySelector<HTMLCanvasElement>('.neural-field');
+  const canvas = document.querySelector<HTMLCanvasElement>(
+    'canvas.neural-field',
+  );
   const synapse = document.querySelector<HTMLElement>(
     '.neural-field__swatch--synapse',
   );
