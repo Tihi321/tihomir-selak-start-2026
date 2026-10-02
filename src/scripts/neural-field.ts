@@ -1,6 +1,8 @@
 // Mirrors tihomir-selak-2026/src/scripts/neural-field.ts, keep in sync.
 // Neural field: drifting nodes, synapse edges, amber firing cascades and
 // quantum "superposed" nodes, drawn on one fixed canvas behind the page.
+// The nebula haze is static CSS (NeuralField.astro), not canvas, to keep
+// full-screen fills out of the frame loop.
 
 export interface FieldProbes {
   synapse: HTMLElement;
@@ -40,12 +42,11 @@ const LAYER_SPEED = [0.6, 1, 1.5];
 const MARGIN = 40;
 const SPRITE = 64;
 const COLLAPSE_MS = 600;
-// Nebula blobs: x, y (viewport fractions), radius (of larger side), period (s)
-const HAZE = [
-  [0.92, 0.05, 0.55, 90],
-  [0.04, 0.95, 0.5, 70],
-  [0.85, 0.95, 0.38, 110],
-] as const;
+// Slow drift needs no more than ~30fps; the 2ms slack keeps 60Hz at every
+// second frame instead of jittering between 2 and 3.
+const FRAME_MS = 1000 / 30 - 2;
+// Edges are batched into this many alpha levels: one stroke per level.
+const EDGE_LEVELS = 16;
 
 const started = new WeakSet<HTMLCanvasElement>();
 
@@ -108,6 +109,7 @@ export function startNeuralField(
   let nodes: Node[] = [];
   let px = new Float32Array(0);
   let py = new Float32Array(0);
+  let pm = new Float32Array(0); // reading-comfort mask per projected node
   let head = new Int32Array(0);
   let next = new Int32Array(0);
   let cols = 0;
@@ -121,6 +123,12 @@ export function startNeuralField(
     active: false,
   }));
   const nb = new Int16Array(64);
+  // Per alpha level: flat x1,y1,x2,y2 segment coordinates, grown on demand.
+  const edgeBuf = Array.from(
+    { length: EDGE_LEVELS },
+    () => new Float32Array(256),
+  );
+  const edgeLen = new Int32Array(EDGE_LEVELS);
 
   let synapse: RGB = [95, 184, 230];
   let phosphor: RGB = [224, 164, 88];
@@ -162,6 +170,7 @@ export function startNeuralField(
     }));
     px = new Float32Array(count);
     py = new Float32Array(count);
+    pm = new Float32Array(count);
     next = new Int32Array(count);
     cols = Math.ceil((width + MARGIN * 2) / LINK);
     rows = Math.ceil((height + MARGIN * 2) / LINK);
@@ -235,6 +244,7 @@ export function startNeuralField(
         MARGIN;
       px[i] = n.x;
       py[i] = y;
+      pm[i] = mask(n.x);
       const cx = Math.min(
         cols - 1,
         Math.max(0, Math.floor((n.x + MARGIN) / LINK)),
@@ -329,24 +339,8 @@ export function startNeuralField(
     const edgeColor = `rgb(${sr},${sg},${sb})`;
     const phosphorColor = `rgb(${phosphor[0]!},${phosphor[1]!},${phosphor[2]!})`;
 
-    // Nebula haze (dark only): huge, slow, mostly at the top-right and
-    // bottom-left corners so it never sits behind the text column.
-    if (!isLight) {
-      const span = Math.max(width, height);
-      for (let h = 0; h < HAZE.length; h++) {
-        const [hx, hy, hr, period] = HAZE[h]!;
-        const ph = (t / period) * 6.2832 + h * 2;
-        const r = hr * span;
-        const cx = (hx + 0.04 * Math.sin(ph)) * width;
-        const cy = (hy + 0.04 * Math.cos(ph * 0.8)) * height;
-        ctx!.globalAlpha = 0.15;
-        ctx!.drawImage(synapseSprite, cx - r, cy - r, r * 2, r * 2);
-      }
-    }
-
-    // Edges
-    ctx!.strokeStyle = edgeColor;
-    ctx!.lineWidth = isLight ? 1 : 0.9;
+    // Edges, bucketed by alpha so each level is a single path + stroke
+    edgeLen.fill(0);
     for (let i = 0; i < nodes.length; i++) {
       const count = neighbours(i, true);
       for (let k = 0; k < count; k++) {
@@ -357,24 +351,47 @@ export function startNeuralField(
         const a =
           (isLight ? fall * fall * 0.5 : Math.pow(fall, 1.4) * 1.1) *
           gain *
-          ((mask(px[i]!) + mask(px[j]!)) / 2);
-        ctx!.globalAlpha =
-          a *
+          ((pm[i]! + pm[j]!) / 2) *
           Math.min(
             LAYER_ALPHA[nodes[i]!.layer]!,
             LAYER_ALPHA[nodes[j]!.layer]!,
           );
-        ctx!.beginPath();
-        ctx!.moveTo(px[i]!, py[i]!);
-        ctx!.lineTo(px[j]!, py[j]!);
-        ctx!.stroke();
+        const level = Math.min(EDGE_LEVELS, Math.round(a * EDGE_LEVELS));
+        if (level === 0) continue;
+        const b = level - 1;
+        let buf = edgeBuf[b]!;
+        const len = edgeLen[b]!;
+        if (len + 4 > buf.length) {
+          const grown = new Float32Array(buf.length * 2);
+          grown.set(buf);
+          buf = edgeBuf[b] = grown;
+        }
+        buf[len] = px[i]!;
+        buf[len + 1] = py[i]!;
+        buf[len + 2] = px[j]!;
+        buf[len + 3] = py[j]!;
+        edgeLen[b] = len + 4;
       }
+    }
+    ctx!.strokeStyle = edgeColor;
+    ctx!.lineWidth = isLight ? 1 : 0.9;
+    for (let b = 0; b < EDGE_LEVELS; b++) {
+      const len = edgeLen[b]!;
+      if (len === 0) continue;
+      const buf = edgeBuf[b]!;
+      ctx!.globalAlpha = (b + 1) / EDGE_LEVELS;
+      ctx!.beginPath();
+      for (let k = 0; k < len; k += 4) {
+        ctx!.moveTo(buf[k]!, buf[k + 1]!);
+        ctx!.lineTo(buf[k + 2]!, buf[k + 3]!);
+      }
+      ctx!.stroke();
     }
 
     // Nodes
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i]!;
-      const m = mask(px[i]!) * gain;
+      const m = pm[i]! * gain;
       const size = LAYER_SIZE[n.layer]!;
       const base = LAYER_ALPHA[n.layer]! * m;
       const c = Math.max(0, 1 - ((t - n.collapse) * 1000) / COLLAPSE_MS);
@@ -456,7 +473,9 @@ export function startNeuralField(
 
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
-    const dt = Math.min(0.05, (now - last) / 1000);
+    if (now - last < FRAME_MS) return;
+    // rAF timestamps can trail performance.now(), so clamp the first dt at 0
+    const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
     last = now;
     clock += dt;
     for (const n of nodes) flow(n, dt, clock);
